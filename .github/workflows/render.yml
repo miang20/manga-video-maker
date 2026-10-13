@@ -89,6 +89,24 @@ jobs:
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: python render.py "projects/${PROJECT_INPUT}"
+      - name: Test black caption-card mode
+        if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test' }}
+        run: |
+          python - <<'PY'
+          import shutil
+          from pathlib import Path
+          import yaml
+          source = Path("projects/video-001")
+          target = Path("projects/video-001-card")
+          (target / "images").mkdir(parents=True, exist_ok=True)
+          shutil.copy2(source / "script.txt", target / "script.txt")
+          shutil.copy2(source / "voice.wav", target / "voice.wav")
+          shutil.copytree(source / "images", target / "images", dirs_exist_ok=True)
+          config = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
+          config["captions"]["caption_mode"] = "card"
+          Path("/tmp/config-card.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+          PY
+          python render.py projects/video-001-card --config /tmp/config-card.yaml
       - name: Render optional Shorts MP4
         if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.shorts_start != '' && github.event.inputs.shorts_end != '') || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
         env:
