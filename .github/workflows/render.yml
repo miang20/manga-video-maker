@@ -1,4 +1,5 @@
 name: Render Manga Video
+run-name: Render ${{ inputs.project || 'video-001' }}${{ inputs.preview_only && ' (preview only)' || '' }}
 on:
   workflow_dispatch:
     inputs:
@@ -16,7 +17,7 @@ on:
         required: false
         type: string
       preview_only:
-        description: "Only prepare and upload image-match preview (requires preview-only step support)"
+        description: "Only prepare and upload the CLIP image-match preview"
         required: false
         default: false
         type: boolean
@@ -121,7 +122,60 @@ jobs:
             tail -n 30 /tmp/matcher-self-test.log
             exit "$status"
           fi
+      - name: Preview-only CLIP image matching
+        id: preview_matching
+        if: ${{ inputs.preview_only }}
+        env:
+          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+          AUTO_MATCH_INPUT: ${{ github.event.inputs.auto_match || 'true' }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from src.parser import parse_script
+          from src.matcher import match_project
+          from src.sample_assets import ensure_thumbnail
+          name = os.environ['PROJECT_INPUT'].strip()
+          if not name or '/' in name or chr(92) in name or name in {'.', '..'}:
+              raise SystemExit('Project must be one folder name such as video-001.')
+          project = Path('projects') / name
+          if not (project / 'script.txt').is_file():
+              raise SystemExit('Missing projects/<name>/script.txt. Upload a script first.')
+          if not (project / 'images').is_dir() or not any(p.is_file() for p in (project / 'images').iterdir()):
+              raise SystemExit('No images found in projects/<name>/images/. Upload images first.')
+          output = Path('output')
+          output.mkdir(parents=True, exist_ok=True)
+          scenes = parse_script(project, image_matches={})
+          if not any(scene.kind == 'image' for scene in scenes):
+              raise SystemExit('Script has no image scenes to match.')
+          config = {'auto_match': os.environ.get('AUTO_MATCH_INPUT', 'true').lower() != 'false'}
+          if config['auto_match']:
+              _, rows = match_project(project, scenes, output, config)
+          else:
+              _, rows = match_project(project, scenes, output, config)
+          table = output / 'match-table.txt'
+          lines = ['Scene | first 6 words | matched image | similarity score | confidence', '--- | --- | --- | --- | ---']
+          for row in rows:
+              words = ' '.join(row['text'].split()[:6]).replace('|', '/')
+              paths = row.get('images') or []
+              names = ', '.join(Path(p).name for p in paths) if paths else '(none)'
+              score = row.get('score')
+              score_text = format(score, '.3f') if isinstance(score, (int, float)) else '-'
+              lines.append(f"{row['scene']} | {words} | {names} | {score_text} | {row['confidence']}")
+          table.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          notes = output / 'notes.txt'
+          if not notes.exists():
+              notes.write_text('Project: ' + name + '\nMode: preview-only CLIP image matching\n', encoding='utf-8')
+          with notes.open('a', encoding='utf-8') as handle:
+              handle.write('\n\nIMAGE SCENE MATCH TABLE\n' + table.read_text(encoding='utf-8'))
+          ensure_thumbnail(project, output)
+          preview = output / (name + '-match-preview.png')
+          if not preview.is_file():
+              raise SystemExit('Matcher did not create the match preview PNG.')
+          print('PREVIEW_ONLY=PASS; voice, render, Shorts and music steps are skipped.')
+          PY
       - name: Ensure sample project and offline inputs
+        if: ${{ !inputs.preview_only }}
         id: ensure_sample
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
@@ -172,6 +226,7 @@ jobs:
           print(f"PROJECT_READY={project}")
           PY
       - name: Render landscape MP4
+        if: ${{ !inputs.preview_only }}
         id: render_landscape
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
@@ -179,6 +234,7 @@ jobs:
           set -o pipefail
           python render.py "projects/${PROJECT_INPUT}" 2>&1 | tee /tmp/render-main.log
       - name: Render caption-card MP4
+        if: ${{ !inputs.preview_only }}
         id: render_card
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
@@ -211,6 +267,7 @@ jobs:
           python render.py "projects/${PROJECT_INPUT}-card" --config /tmp/config-card.yaml 2>&1 | tee /tmp/render-card.log
           cp /tmp/landscape-notes.txt output/notes.txt
       - name: Render vertical Shorts MP4
+        if: ${{ !inputs.preview_only && inputs.shorts_on }}
         id: render_shorts
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
@@ -232,6 +289,7 @@ jobs:
                       int(cfg.get("video", {}).get("fps", 24)), int(cfg.get("video", {}).get("crf", 20)))
           print(f"SHORTS_OK={target}")
       - name: Verify MP4 streams and duration
+        if: ${{ !inputs.preview_only }}
         id: verify_outputs
         run: |
           python - <<'PY'
