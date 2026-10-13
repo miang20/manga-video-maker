@@ -218,11 +218,11 @@ def render_project(project, config_path=None):
         fade = float(music_cfg.get("fade_seconds", 1.0))
         cmd += [f"[1:a]aresample={sample_rate},volume=1[voice];[2:a]aresample={sample_rate},volume={music_linear:.6f},afade=t=in:st=0:d={fade},asetpts=PTS-STARTPTS[music];[music][voice]sidechaincompress=threshold={threshold}:ratio={ratio}:attack=20:release=350[ducked];[voice][ducked]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"]
     else:
-        cmd += ["[1:a]aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100[aout]"]
+        cmd += [f"[1:a]aresample={sample_rate},loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"]
     cmd += ["-map", "0:v:0", "-map", "[aout]", "-vf", vf, "-r", str(fps),
             "-c:v", "libx264", "-preset", str(video_cfg.get("preset", "medium")),
             "-crf", str(video_cfg.get("crf", 20)), "-c:a", "aac", "-b:a", "192k",
-            "-ar", "44100", "-shortest", "-movflags", "+faststart", output]
+            "-ar", str(sample_rate), "-shortest", "-movflags", "+faststart", output]
     run(cmd)
     streams = ffprobe(output).get("streams", [])
     if not any(s.get("codec_type") == "video" for s in streams):
