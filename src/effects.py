@@ -5,14 +5,15 @@ from .utils import run
 
 
 def render_still(image, output, duration, width, height, fps, zoom, direction, grain=True,
-                 grain_opacity=0.06, max_pan_fraction=0.03):
+                 grain_opacity=0.06, max_pan_fraction=0.03, zoom_start=1.0):
     frames = max(1, math.ceil(duration * fps))
-    zoom = max(1.0, float(zoom))
-    delta = zoom - 1.0
+    zoom_start = max(1.0, float(zoom_start))
+    zoom = max(zoom_start, float(zoom))
+    delta = zoom - zoom_start
     if direction == "out":
-        z = f"max({zoom:.6f}-{delta:.6f}*on/{frames},1.0)"
+        z = f"max({zoom:.6f}-{delta:.6f}*on/{frames},{zoom_start:.6f})"
     else:
-        z = f"min(1+{delta:.6f}*on/{frames},{zoom:.6f})"
+        z = f"min({zoom_start:.6f}+{delta:.6f}*on/{frames},{zoom:.6f})"
     rng = random.Random(str(image))
     pan_x = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
     pan_y = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
