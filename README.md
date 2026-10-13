@@ -22,3 +22,5 @@ Voice files are silence-trimmed, normalized to about -16 LUFS, and resampled to 
 ## Outputs
 
 Landscape MP4, SRT captions, notes with duration and paragraph start times, optional copied thumbnail, and optional vertical Shorts MP4. Workflow artifacts are retained for 14 days.
+
+Acceptance workflow: a commit titled `Run voice-file acceptance test` runs the generated 22.05 kHz MP3 voice, silence-trim, music-ducking, caption-card, and artifact checks.
