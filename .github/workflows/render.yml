@@ -85,12 +85,14 @@ jobs:
           restore-keys: |
             faster-whisper-${{ runner.os }}-base.en-
       - name: Install FFmpeg and fonts
+        if: ${{ !inputs.preview_only }}
         id: install_ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core espeak-ng
       - name: Install dependencies
         id: install_dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements-render.txt
       - name: Install optional Nunito font
+        if: ${{ !inputs.preview_only }}
         id: install_font
         run: python setup_fonts.py
       - name: Run syntax and YAML validation
@@ -108,9 +110,11 @@ jobs:
           print("YAML_VALIDATION=PASS")
           PY
       - name: Run alignment unit tests
+        if: ${{ !inputs.preview_only }}
         id: alignment_tests
         run: python -m unittest discover -s tests -p 'test_alignment.py' -v
       - name: Run image matcher self-test
+        if: ${{ !inputs.preview_only }}
         id: matcher_self_test
         continue-on-error: true
         run: |
