@@ -33,12 +33,24 @@ def render_project(project,config_path=None):
    paths=scene.image_paths or []
    for image in paths:
     if not image.is_file():raise FileNotFoundError(f"Missing image for paragraph {scene.number}: {image}")
-   parts=[];per=sd/len(paths)
+   cross=min(float(v.get("crossfade_seconds",.15)),sd/(2*len(paths))) if len(paths)>1 else 0.0
+   per=(sd+cross*(len(paths)-1))/len(paths)
+   parts=[]
    for j,image in enumerate(paths):
     part=work/f"scene-{scene.number:02d}-part-{j+1:02d}.mp4"
     render_still(image,part,per,w,h,fps,float(v.get("zoom",1.08)),"in" if j%2==0 else "out",bool(g.get("enabled",True)),float(g.get("opacity",.1)));parts.append(part)
-   lst=work/f"parts-{scene.number:02d}.txt";lst.write_text("".join("file '"+p.resolve().as_posix()+"'\n" for p in parts),encoding="utf-8")
-   run(["ffmpeg","-y","-f","concat","-safe","0","-i",lst,"-c","copy",clip])
+   if len(parts)==1:
+    run(["ffmpeg","-y","-i",parts[0],"-c","copy",clip])
+   else:
+    cmd=["ffmpeg","-y"]
+    for part in parts:cmd += ["-i",part]
+    filters=[f"[{i}:v]settb=AVTB,setpts=PTS-STARTPTS,fps={fps},format=yuv420p[v{i}]" for i in range(len(parts))]
+    last="v0"
+    for i in range(1,len(parts)):
+     nxt=f"x{i}";offset_x=i*(per-cross)
+     filters.append(f"[{last}][v{i}]xfade=transition=fade:duration={cross:.4f}:offset={offset_x:.4f}[{nxt}]");last=nxt
+    cmd += ["-filter_complex",";".join(filters),"-map",f"[{last}]","-an","-c:v","libx264","-preset","ultrafast","-crf","22",clip]
+    run(cmd)
   clips.append(clip);offset+=sd
  al=work/"audio-list.txt";al.write_text("".join("file '"+p.resolve().as_posix()+"'\n" for p in audios),encoding="utf-8")
  voice=audio/"voiceover.mp3";run(["ffmpeg","-y","-f","concat","-safe","0","-i",al,"-c:a","libmp3lame","-q:a","3",voice])
