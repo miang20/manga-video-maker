@@ -1,5 +1,7 @@
 name: Render Manga Video
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       project:
@@ -16,7 +18,7 @@ on:
         required: false
         type: string
       test_voice:
-        description: "Generate a temporary test voice.wav with eSpeak to exercise voice-file alignment (acceptance test only)"
+        description: "Generate a temporary test voice.mp3 at 22.05 kHz with leading silence (acceptance test only)"
         required: false
         default: false
         type: boolean
@@ -61,7 +63,7 @@ jobs:
           if not (p/"script.txt").is_file(): raise SystemExit(f"Missing script file: {p/'script.txt'}")
           print(f"Project ready: {p}")
           PY
-      - name: Generate temporary acceptance-test voice.wav
+      - name: Generate temporary acceptance-test voice.mp3 with leading silence
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
@@ -71,12 +73,21 @@ jobs:
           from pathlib import Path
           project = Path("projects") / os.environ["PROJECT_INPUT"]
           text = " ".join(line.strip() for line in (project / "script.txt").read_text(encoding="utf-8").splitlines() if line.strip())
-          target = project / "voice.wav"
-          result = subprocess.run(["espeak-ng", "-v", "en-us", "-s", "145", "-w", str(target), text], capture_output=True, text=True)
-          if result.returncode or not target.is_file() or target.stat().st_size < 1000:
-              raise SystemExit(f"Could not generate acceptance voice.wav: {result.stderr}")
-          print(f"Generated temporary test audio: {target} ({target.stat().st_size} bytes)")
+          raw = Path("/tmp/acceptance-voice.wav")
+          target = project / "voice.mp3"
+          result = subprocess.run(["espeak-ng", "-v", "en-us", "-s", "145", "-w", str(raw), text], capture_output=True, text=True)
+          if result.returncode or not raw.is_file() or raw.stat().st_size < 1000:
+              raise SystemExit(f"Could not generate source test voice: {result.stderr}")
+          subprocess.run(["ffmpeg", "-y", "-i", str(raw), "-af", "adelay=1500|1500", "-ar", "22050", "-ac", "2", "-codec:a", "libmp3lame", "-b:a", "96k", str(target)], check=True, capture_output=True, text=True)
+          print(f"Generated test MP3 with 1.5s leading silence at 22.05 kHz: {target} ({target.stat().st_size} bytes)")
           PY
+      - name: Generate quiet music pad and test thumbnail
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
+        run: |
+          mkdir -p assets/music projects/video-001/thumbnail
+          ffmpeg -y -f lavfi -i "anoisesrc=color=pink:amplitude=0.01:sample_rate=44100:duration=60" -codec:a libmp3lame -b:a 96k assets/music/000-acceptance-pad.mp3
+          cp projects/video-001/images/01.png projects/video-001/thumbnail/acceptance-thumbnail.png
+          ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=nw=1 assets/music/000-acceptance-pad.mp3
       - name: Render landscape MP4
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
@@ -92,7 +103,7 @@ jobs:
           target = Path("projects/video-001-card")
           (target / "images").mkdir(parents=True, exist_ok=True)
           shutil.copy2(source / "script.txt", target / "script.txt")
-          shutil.copy2(source / "voice.wav", target / "voice.wav")
+          shutil.copy2(source / "voice.mp3", target / "voice.mp3")
           shutil.copytree(source / "images", target / "images", dirs_exist_ok=True)
           config = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
           config["captions"]["caption_mode"] = "card"
@@ -133,6 +144,27 @@ jobs:
               audio = [s for s in streams if s.get("codec_type") == "audio"]
               if not audio: raise SystemExit(f"{video} has no audio stream")
               print(f"VERIFIED {video}: {probe['format'].get('duration')} sec, audio={audio[0].get('codec_name')}, sample_rate={audio[0].get('sample_rate')}")
+          PY
+      - name: Verify companion artifacts and loudness
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
+        run: |
+          test -s output/video-001.mp4
+          test -s output/video-001.srt
+          test -s output/video-001-notes.txt
+          test -s output/video-001-thumbnail.png
+          python - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          video=Path("output/video-001.mp4")
+          probe=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_streams","-show_format","-of","json",str(video)]))
+          audio=next(s for s in probe["streams"] if s.get("codec_type")=="audio")
+          assert int(audio["sample_rate"]) == 44100, audio
+          measured=subprocess.run(["ffmpeg","-hide_banner","-i",str(video),"-af","loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json","-f","null","-"],capture_output=True,text=True)
+          print("AUDIO_STREAM_SAMPLE_RATE="+audio["sample_rate"])
+          print("LOUDNORM_MEASUREMENT:")
+          print(measured.stderr[-1800:])
+          print("COMPANION_ARTIFACTS_OK: SRT, notes, thumbnail")
+          if "input_i" not in measured.stderr: raise SystemExit("Could not measure output loudness")
           PY
       - uses: actions/upload-artifact@v4
         with:
