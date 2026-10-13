@@ -25,6 +25,7 @@ def _audio_duration(path: Path) -> float:
 
 
 def _edge_silence(source: Path, threshold_db: float, min_silence: float, total: float) -> tuple[float, float]:
+    """Measure only silence touching the beginning or end; internal pauses are ignored."""
     probe = subprocess.run(
         ["ffmpeg", "-hide_banner", "-i", str(source), "-af",
          f"silencedetect=noise={threshold_db}dB:d={min_silence}", "-f", "null", "-"],
@@ -33,9 +34,21 @@ def _edge_silence(source: Path, threshold_db: float, min_silence: float, total: 
     log = probe.stderr
     starts = [float(value) for value in re.findall(r"silence_start:\s*([0-9.]+)", log)]
     ends = [float(value) for value in re.findall(r"silence_end:\s*([0-9.]+)", log)]
-    leading = ends[0] if starts and ends and starts[0] <= 0.05 else 0.0
-    trailing = total - starts[-1] if starts and ends and ends[-1] >= total - 0.10 and starts[-1] < total else 0.0
-    return max(0.0, leading), max(0.0, trailing)
+
+    leading = 0.0
+    if starts and starts[0] <= 0.05:
+        # A leading silence normally has a matching silence_end. If the whole
+        # recording is silent, cap the report to the full source duration.
+        leading = ends[0] if ends else total
+
+    trailing = 0.0
+    # FFmpeg does not emit silence_end when silence continues to EOF. Therefore
+    # detect a final silence_start that occurs after the last completed silence.
+    last_completed_end = ends[-1] if ends else 0.0
+    if starts and starts[-1] >= last_completed_end and starts[-1] < total:
+        trailing = total - starts[-1]
+
+    return max(0.0, min(total, leading)), max(0.0, min(total, trailing))
 
 
 def prepare_voice(source: Path, target: Path, config: dict) -> None:
@@ -63,9 +76,10 @@ def prepare_voice(source: Path, target: Path, config: dict) -> None:
              "-ar", str(sample_rate), "-ac", "2", "-c:a", "pcm_s16le", target])
     finally:
         temporary.unlink(missing_ok=True)
+    print(f"VOICE_TRIM_START removed={removed_start:.2f}s")
+    print(f"VOICE_TRIM_END removed={removed_end:.2f}s")
     print(
-        f"VOICE_TRIM original={original_duration:.2f}s; trimmed={trimmed_duration:.2f}s; "
-        f"removed_start={removed_start:.2f}s; removed_end={removed_end:.2f}s; "
+        f"VOICE_TRIM_DURATION original={original_duration:.2f}s; trimmed={trimmed_duration:.2f}s; "
         f"removed_total={max(0.0, original_duration - trimmed_duration):.2f}s"
     )
 
