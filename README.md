@@ -40,5 +40,6 @@ The workflow uploads files from `output/*`, including MP4s, SRT, `notes.txt`, an
 
 - The app writes project inputs to `projects/<name>/` on `main` using GitHub's Contents API, then requests a workflow dispatch and polls Actions.
 - The app is only a UI; the render job stays in Actions.
-- GitHub's Contents API has practical upload limits. The app rejects individual files larger than 90 MB; for large media, reduce the file size before uploading.
-- **Preview-only and per-render settings require matching workflow support.** The existing workflow must accept the corresponding `workflow_dispatch` inputs and conditionally skip render steps before those buttons can be considered functional. Do not assume a preview-only run or the caption/music/Shorts controls are effective until the workflow is updated and manually tested.
+- GitHub's Contents API has practical upload limits. The app rejects individual files larger than 25 MB before deleting old project files. GitHub's Contents API may reject some files below that limit too; compress large media before uploading.
+- Preview-only runs the CLIP image matcher and uploads the contact-sheet PNG, `match-table.txt`, `notes.txt`, and thumbnail without running voice preparation or rendering steps. Cached model availability and GitHub runner startup affect total time.
+- Caption mode/size, music, Shorts, and auto-match settings are passed into the render configuration. These changes still require a manual Actions run to verify end-to-end behavior.
