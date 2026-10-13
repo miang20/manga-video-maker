@@ -1,0 +1,2 @@
+# Write one paragraph per scene. Separate paragraphs with a blank line.
+# Add the same number of images to images/ (supported: png, jpg, jpeg, webp).
