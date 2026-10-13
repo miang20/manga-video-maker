@@ -1,67 +1,24 @@
 # Manga Video Maker
 
-A free manga-style faceless-video renderer. Recommended Android workflow: upload a script, manga images, and (best quality) your own narration audio; run GitHub Actions and download the MP4 artifact.
+## Android quick start (Roman Urdu + English)
 
-## Android phone: upload your own voice.mp3
+1. GitHub par repo open karo: https://github.com/miang20/manga-video-maker
+2. `projects/_template` open karo. Copy karne ke liye **Add file → Create new file** se `projects/video-002/script.txt` banao, phir `projects/video-002/images/.gitkeep` aur `projects/video-002/thumbnail/.gitkeep` folders/files bhi banao. Ya template files ko download karke apne project folder mein upload karo.
+3. `projects/video-001` (ya apne project) open karo → **Add file → Upload files**. `script.txt`, numbered images (png/jpg/jpeg/webp), aur human narration `voice.mp3` ya `voice.wav` upload karo. Android Chrome mein option na dikhe to **⋮ → Desktop site** use karo.
+4. Commit changes to main. Uploading files does not start a render automatically.
+5. **Actions → Render Manga Video → Run workflow**, Project field mein folder name (e.g. `video-001`) do. Optional Shorts start/end seconds dono fill karo. **Run workflow** press karo.
+6. Green check ke baad run open karo, Artifacts se ZIP download karo. ZIP mein MP4, captions SRT, notes aur thumbnail (agar uploaded ho) honge.
 
-1. Open https://github.com/miang20/manga-video-maker in Chrome on your Android phone and sign in.
-2. Open the project folder, for example projects/video-001. Tap **Add file → Upload files**. If mobile view hides the option, open Chrome menu **⋮ → Desktop site**.
-3. Choose your narration recording named exactly voice.mp3 and upload it directly inside the project folder, alongside script.txt. Supported alternatives are voice.wav and voice.m4a; voice.mp3 is checked first.
-4. Scroll down, enter a commit message such as “Add human narration”, then tap **Commit changes** to main.
-5. Keep script paragraphs in the same order as the spoken recording. The renderer transcribes the voice with faster-whisper base.en on CPU/int8, then aligns paragraphs using fuzzy word matching and cumulative word-count fallback.
-6. Open the repository's **Actions** tab → **Render Manga Video** → **Run workflow**. Select branch main, set Project to video-001, then tap **Run workflow**. Wait for the green check.
-7. Open the completed run and scroll to **Artifacts**. Download manga-video-video-001, extract the ZIP on your phone, and play video-001.mp4.
+## Project format
 
-Your uploaded voice file takes priority. If it exists, no TTS is called. If no voice file exists, Edge TTS is retried; if still blocked, the job stops with the exact upload instruction instead of switching to a robotic offline voice.
+- `script.txt`: paragraphs separated by a blank line; each paragraph maps to one image.
+- `voice.mp3`, `voice.wav`, `voice.m4a`, or `voice.ogg`: optional uploaded narration. Uploaded voice always takes priority; no TTS runs when it exists.
+- `images/`: supported PNG/JPG/JPEG/WebP, naturally sorted (1, 2, 10). Oversized images are optimized in a work cache; originals are not modified. Number of images must match paragraphs.
+- `thumbnail/`: optional thumbnail file copied into output.
+- `assets/music/`: optional MP3; mixed quietly under narration with sidechain ducking.
 
-## Project structure
+Voice files are silence-trimmed, normalized to about -16 LUFS, and resampled to 44.1 kHz. faster-whisper base.en CPU/int8 supplies word timestamps; if transcript alignment is weak, a clear warning is printed and paragraph timing falls back to proportional word counts.
 
-    projects/video-001/
-      script.txt
-      voice.mp3        # optional but recommended; voice.wav / voice.m4a also work
-      images/
-        01.png         # paragraph 1 image
-        02.png         # paragraph 2 image
-        03a.png        # paragraph 3 image variant A
-        03b.png        # paragraph 3 image variant B
-    assets/music/      # optional background music MP3
+## Outputs
 
-Separate paragraphs in script.txt with one blank line. Paragraph 1 uses images/01.png, paragraph 2 uses 02.png, and so on. PNG/JPG/JPEG/WebP are supported. Multiple images with the same paragraph number (e.g. 03a.png and 03b.png) split that paragraph's visual time and crossfade between variants.
-
-- CARD: Nobody saw it coming. creates a full-screen black text-card scene.
-- MUSIC: dark-ambient.mp3 selects a track from assets/music/ for the next paragraph.
-- If assets/music/ contains an MP3, it is mixed under narration at -26 dB with voice-triggered ducking.
-- captions.caption_mode is overlay by default; card mode uses a black-background caption presentation.
-
-## Visual defaults
-
-- 1920×1080, 24 fps H.264/AAC; audio is resampled to 44.1 kHz and loudness-normalized to about -16 LUFS.
-- Large 76 px bold white captions with thick black outline, 2–4 words at a time, and a 0.08-second 0.9→1.0 pop-in.
-- Captions default to the lower third; caption_position: center centers them. A translucent black caption box can be toggled in config.yaml.
-- Alternating visible 1.00→1.15 zoom-in/zoom-out, random pan up to 3% of the frame, subtle grain strength 0.06, and 0.15-second visual crossfades.
-- Vertical Shorts export remains available: in workflow inputs, provide both Shorts start and end seconds.
-
-## Acceptance test (temporary test voice)
-
-In **Actions → Render Manga Video → Run workflow**, select video-001 and set **Generate a temporary test voice.wav** to true. The workflow generates a temporary eSpeak test voice.wav on the runner (it is not committed), exercises faster-whisper word alignment and renders the MP4, then uploads the artifact. This is a pipeline test voice, not a substitute for human narration.
-
-## Local run
-
-Install Python 3.11 and FFmpeg, then run:
-
-    python -m pip install -r requirements.txt
-    python setup_fonts.py
-    python render.py projects/video-001
-
-Output: output/video-001.mp4. Create a Shorts cut with:
-
-    python render.py projects/video-001 --shorts-start 12 --shorts-end 42
-
-Optional UI: streamlit run app.py.
-
-## Troubleshooting
-
-- **Voice file missing and Edge TTS is blocked.** Upload projects/<project>/voice.mp3 and rerun.
-- **Missing image for paragraph N:** add images/NN.png or variants such as NNa.png.
-- **Model download is slow:** the first faster-whisper run downloads base.en; GitHub Actions caches the Hugging Face model directory for later runs.
-- **No artifact:** open that Actions run and inspect the failed step. The workflow checks every output for both video and audio streams.
+Landscape MP4, SRT captions, notes with duration and paragraph start times, optional copied thumbnail, and optional vertical Shorts MP4. Workflow artifacts are retained for 14 days.
