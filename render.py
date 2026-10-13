@@ -224,7 +224,7 @@ def render_project(project, config_path=None):
         threshold = float(music_cfg.get("ducking_threshold", .03))
         ratio = float(music_cfg.get("ducking_ratio", 8))
         fade = float(music_cfg.get("fade_seconds", 1.0))
-        cmd += [f"[1:a]aresample={sample_rate},volume=1[voice];[2:a]aresample={sample_rate},volume={music_linear:.6f},afade=t=in:st=0:d={fade},asetpts=PTS-STARTPTS[music];[music][voice]sidechaincompress=threshold={threshold}:ratio={ratio}:attack=20:release=350[ducked];[voice][ducked]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"]
+        cmd += [f"[1:a]aresample={sample_rate},volume=1,asplit=2[voice_main][voice_sc];[2:a]aresample={sample_rate},volume={music_linear:.6f},afade=t=in:st=0:d={fade},asetpts=PTS-STARTPTS[music];[music][voice_sc]sidechaincompress=threshold={threshold}:ratio={ratio}:attack=20:release=350[ducked];[voice_main][ducked]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"]
     else:
         cmd += [f"[1:a]aresample={sample_rate},loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"]
     cmd += ["-map", "0:v:0", "-map", "[aout]", "-vf", vf, "-r", str(fps),

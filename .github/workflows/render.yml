@@ -1,7 +1,5 @@
 name: Render Manga Video
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       project:
@@ -64,7 +62,7 @@ jobs:
           print(f"Project ready: {p}")
           PY
       - name: Generate temporary acceptance-test voice.mp3 with leading silence
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
@@ -82,7 +80,7 @@ jobs:
           print(f"Generated test MP3 with 1.5s leading silence at 22.05 kHz: {target} ({target.stat().st_size} bytes)")
           PY
       - name: Generate quiet music pad and test thumbnail
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
         run: |
           mkdir -p assets/music projects/video-001/thumbnail
           python -c "from pathlib import Path; from src.sample_assets import ensure_sample_images; ensure_sample_images(Path('projects/video-001'))"
@@ -94,7 +92,7 @@ jobs:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: python render.py "projects/${PROJECT_INPUT}"
       - name: Test black caption-card mode
-        if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
         run: |
           python - <<'PY'
           import shutil
@@ -112,7 +110,7 @@ jobs:
           PY
           python render.py projects/video-001-card --config /tmp/config-card.yaml
       - name: Render optional Shorts MP4
-        if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.shorts_start != '' && github.event.inputs.shorts_end != '') || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'workflow_dispatch' && inputs.shorts_start != '' && inputs.shorts_end != '') }}
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
           SHORTS_START: ${{ github.event.inputs.shorts_start || '0' }}
@@ -147,12 +145,14 @@ jobs:
               print(f"VERIFIED {video}: {probe['format'].get('duration')} sec, audio={audio[0].get('codec_name')}, sample_rate={audio[0].get('sample_rate')}")
           PY
       - name: Verify companion artifacts and loudness
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
         run: |
           test -s output/video-001.mp4
           test -s output/video-001.srt
           test -s output/notes.txt
           test -s output/video-001-thumbnail.png
+          test -s output/video-001-card.mp4
+          test -s output/video-001-shorts.mp4
           python - <<'PY'
           import json, subprocess
           from pathlib import Path
@@ -173,3 +173,48 @@ jobs:
           path: output/*
           if-no-files-found: error
           retention-days: 14
+
+      - name: Final output and audio diagnostics
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          outputs = sorted(p for p in Path("output").glob("*") if p.is_file())
+          print("OUTPUT_FILE_LIST:")
+          for item in outputs:
+              print(f"OUTPUT_FILE: {item} ({item.stat().st_size} bytes)")
+          videos = [p for p in outputs if p.suffix.lower() == ".mp4"]
+          if not videos:
+              print("FINAL_DIAGNOSTICS=FAIL: no MP4 files found")
+              raise SystemExit(1)
+          failed = False
+          for video in videos:
+              probe = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=sample_rate", "-of", "json", str(video)], text=True))
+              audio = probe.get("streams", [])
+              if not audio:
+                  print(f"AUDIO_SAMPLE_RATE_HZ {video}=MISSING")
+                  failed = True
+                  continue
+              rate = int(audio[0].get("sample_rate", 0))
+              print(f"AUDIO_SAMPLE_RATE_HZ {video}={rate}")
+              measured = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(video), "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"], capture_output=True, text=True)
+              start = measured.stderr.rfind("{")
+              end = measured.stderr.find("}", start)
+              if start < 0 or end < 0:
+                  print(f"LOUDNESS_LUFS {video}=UNMEASURABLE")
+                  print(measured.stderr[-1200:])
+                  failed = True
+                  continue
+              report = json.loads(measured.stderr[start:end + 1])
+              loudness = report.get("input_i", "unknown")
+              print(f"LOUDNESS_LUFS {video}={loudness}")
+              try:
+                  if rate != 44100 or abs(float(loudness) - (-16.0)) > 2.5:
+                      failed = True
+              except (TypeError, ValueError):
+                  failed = True
+          print("FINAL_DIAGNOSTICS=" + ("FAIL" if failed else "PASS"))
+          if failed:
+              raise SystemExit(1)
+          PY

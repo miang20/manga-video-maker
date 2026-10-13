@@ -11,7 +11,7 @@ st.title("Manga Video Maker")
 st.write("Upload a script, numbered manga images, and optionally your own narration for a human-sounding faceless video.")
 script = st.file_uploader("1. Upload script.txt", type=["txt"])
 images = st.file_uploader("2. Upload numbered images ZIP", type=["zip"])
-voice_file = st.file_uploader("3. Optional human voiceover (MP3, WAV, or M4A)", type=["mp3", "wav", "m4a"])
+voice_file = st.file_uploader("3. Optional human voiceover (MP3, WAV, M4A, or OGG)", type=["mp3", "wav", "m4a", "ogg"])
 voices = {
     "Guy (US male)": "en-US-GuyNeural",
     "Jenny (US female)": "en-US-JennyNeural",
@@ -31,8 +31,8 @@ if st.button("Render video", type="primary", disabled=not (script and images)):
             (project / "script.txt").write_bytes(script.getvalue())
             if voice_file:
                 suffix = Path(voice_file.name).suffix.lower()
-                if suffix not in {".mp3", ".wav", ".m4a"}:
-                    raise ValueError("Voiceover must be MP3, WAV, or M4A.")
+                if suffix not in {".mp3", ".wav", ".m4a", ".ogg"}:
+                    raise ValueError("Voiceover must be MP3, WAV, M4A, or OGG.")
                 (project / f"voice{suffix}").write_bytes(voice_file.getvalue())
             with zipfile.ZipFile(images) as archive:
                 for info in archive.infolist():
