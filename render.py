@@ -55,7 +55,7 @@ def render_project(project,config_path=None):
    break
  if music is None and m.get("enabled",True):music=next((p for p in sorted((ROOT/"assets"/"music").glob("*")) if p.suffix.lower() in {".mp3",".wav",".m4a",".aac"}),None)
  output=ROOT/"output"/f"{project.name}.mp4";vf=f"fps={fps},setsar=1,format=yuv420p"
- if caps:vf+=",ass='"+ass.as_posix().replace(":","\\\\:")+"'"
+ if caps:vf+=",ass='"+ass.as_posix().replace(":","\\:")+"'"
  cmd=["ffmpeg","-y","-i",joined,"-i",voice]
  if music:cmd+=["-stream_loop","-1","-i",music]
  cmd+=["-filter_complex"]
