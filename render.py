@@ -186,12 +186,6 @@ def render_project(project, config_path=None):
                   "center" if is_card_mode else str(caption_cfg.get("caption_position", "lower_third")),
                   False if is_card_mode else bool(caption_cfg.get("box_enabled", True)),
                   float(caption_cfg.get("pop_seconds", .08)))
-        if is_card_mode:
-            black_video = work / "caption-cards-black.mp4"
-            run(["ffmpeg", "-y", "-f", "lavfi", "-i",
-                 f"color=c=black:s={width}x{height}:r={fps}:d={voice_duration:.4f}",
-                 "-an", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", black_video])
-            joined = black_video
 
     music = None
     for scene in scenes:
@@ -205,6 +199,11 @@ def render_project(project, config_path=None):
 
     output = ROOT / "output" / f"{project.name}.mp4"
     vf = f"fps={fps},setsar=1,format=yuv420p"
+    if caption_chunks and caption_mode == "card":
+        for chunk in caption_chunks:
+            start = max(0.0, float(chunk["start"]))
+            end = max(start + 0.01, float(chunk["end"]))
+            vf += f",drawbox=x=0:y=0:w=iw:h=ih:color=black:t=fill:enable='between(t\\,{start:.3f}\\,{end:.3f})'"
     if caption_chunks:
         vf += ",ass='" + ass.as_posix().replace(":", "\\:").replace("'", "\\'") + "'"
     cmd = ["ffmpeg", "-y", "-i", joined, "-i", voice_path]
