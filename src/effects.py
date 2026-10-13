@@ -16,8 +16,8 @@ def render_still(image, output, duration, width, height, fps, zoom, direction, g
     rng = random.Random(str(image))
     pan_x = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
     pan_y = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
-    x = f"max(0,min(iw-iw/zoom,(iw-iw/zoom)/2+({pan_x:.5f})*(iw-iw/zoom)*sin(on/{frames}*PI)))"
-    y = f"max(0,min(ih-ih/zoom,(ih-ih/zoom)/2+({pan_y:.5f})*(ih-ih/zoom)*sin(on/{frames}*PI)))"
+    x = f"max(0,min(iw-iw/zoom,(iw-iw/zoom)/2+({pan_x:.5f})*iw*sin(on/{frames}*PI)))"
+    y = f"max(0,min(ih-ih/zoom,(ih-ih/zoom)/2+({pan_y:.5f})*ih*sin(on/{frames}*PI)))"
     vf = [
         f"scale={width}:{height}:force_original_aspect_ratio=increase",
         f"crop={width}:{height}",
