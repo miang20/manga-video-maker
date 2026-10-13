@@ -80,10 +80,11 @@ def render_project(project, config_path=None):
         raise FileNotFoundError("No caption font found. Run python setup_fonts.py or install fonts-dejavu-core.")
 
     # Normalize supplied image inputs once; preserve originals and keep the parser's scene mapping.
-    prepared_images = prepare_images(project, [scene for scene in scenes if scene.kind == "image"])
-    image_iter = iter(prepared_images)
-    for scene in scenes:
-        if scene.kind == "image":
+    image_scenes = [scene for scene in scenes if scene.kind == "image"]
+    if image_scenes and all(len(scene.image_paths or []) == 1 for scene in image_scenes):
+        prepared_images = prepare_images(project, image_scenes)
+        image_iter = iter(prepared_images)
+        for scene in image_scenes:
             scene.image_paths = [next(image_iter)]
 
     supplied_voice = find_voice_file(project)
