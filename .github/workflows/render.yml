@@ -233,7 +233,7 @@ jobs:
         if: ${{ !inputs.preview_only }}
         env:
           CAPTION_MODE_INPUT: ${{ github.event.inputs.caption_mode || 'overlay' }}
-          CAPTION_SIZE_INPUT: ${{ github.event.inputs.caption_size || '48' }}
+          CAPTION_SIZE_INPUT: ${{ github.event.inputs.caption_size || '76' }}
           MUSIC_ON_INPUT: ${{ github.event.inputs.music_on || 'true' }}
           SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
           AUTO_MATCH_INPUT: ${{ github.event.inputs.auto_match || 'true' }}
@@ -409,6 +409,7 @@ jobs:
         if: ${{ always() && !inputs.preview_only }}
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+          SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
         run: |
           python - <<'PY'
           import json
