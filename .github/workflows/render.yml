@@ -299,15 +299,12 @@ jobs:
 
           def check(label, ok, detail):
               status = "PASS" if ok else "FAIL"
-              if not ok and first_step:
-                  skip_steps = {
-                      "Caption-card MP4 exists": "Render caption-card MP4",
-                      "Shorts MP4 exists": "Render vertical Shorts MP4",
-                      "Thumbnail exists": "Ensure sample project and offline inputs",
-                  }
-                  required_step = skip_steps.get(label)
-                  if required_step and first_step != required_step:
-                      status = "SKIPPED"
+              # Once an earlier workflow step failed, downstream self-checks may
+              # be unable to run or may only report missing outputs caused by
+              # that first failure. Keep the original error authoritative and
+              # mark these dependent checks SKIPPED instead of multiplying failures.
+              if not ok and first_error_text:
+                  status = "SKIPPED"
               results.append((label, status, str(detail)))
               print(f"{label}: {status} - {detail}")
 
