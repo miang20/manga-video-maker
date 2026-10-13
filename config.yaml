@@ -2,28 +2,46 @@ voice:
   name: en-US-GuyNeural
   rate: "+0%"
   pitch: "+0Hz"
-  retries: 3
+  retries: 4
+  retry_delay_seconds: 1.5
+transcription:
+  model: base.en
+  device: cpu
+  compute_type: int8
+  beam_size: 5
+  model_cache: ~/.cache/huggingface/hub
 video:
   width: 1920
   height: 1080
   fps: 24
   crf: 20
   preset: medium
-  scene_padding_seconds: 0.3
+  scene_padding_seconds: 0.0
   crossfade_seconds: 0.15
-  zoom: 1.08
+  zoom_start: 1.00
+  zoom: 1.15
+  max_pan_fraction: 0.03
 captions:
   enabled: true
   words_per_chunk: 3
+  min_words_per_chunk: 2
+  max_words_per_chunk: 4
   font: assets/fonts/Nunito-Bold.ttf
   fallback_font: /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
-  size: 62
-  outline: 3
-  bottom_fraction: 0.32
+  size: 76
+  card_size: 88
+  outline: 5
+  caption_position: lower_third
+  box_enabled: true
+  pop_seconds: 0.08
+  caption_mode: overlay
+  bottom_fraction: 0.13
 music:
   enabled: true
-  volume: 0.055
+  volume_db: -26
   fade_seconds: 1.0
+  ducking_threshold: 0.03
+  ducking_ratio: 8
 grain:
   enabled: true
-  opacity: 0.10
+  strength: 0.06
