@@ -225,6 +225,38 @@ jobs:
           print(f"SAMPLE_IMAGES_COUNT={len(image_files)}")
           print(f"PROJECT_READY={project}")
           PY
+      - name: Prepare effective render settings
+        if: ${{ !inputs.preview_only }}
+        env:
+          CAPTION_MODE_INPUT: ${{ github.event.inputs.caption_mode || 'overlay' }}
+          CAPTION_SIZE_INPUT: ${{ github.event.inputs.caption_size || '48' }}
+          MUSIC_ON_INPUT: ${{ github.event.inputs.music_on || 'true' }}
+          SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
+          AUTO_MATCH_INPUT: ${{ github.event.inputs.auto_match || 'true' }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import yaml
+          config = yaml.safe_load(Path('config.yaml').read_text(encoding='utf-8'))
+          def enabled(name):
+              return os.environ.get(name, 'true').strip().lower() not in {'false', '0', 'no', 'off'}
+          mode = os.environ.get('CAPTION_MODE_INPUT', 'overlay').strip().lower()
+          if mode not in {'overlay', 'card'}:
+              raise SystemExit('caption_mode must be overlay or card.')
+          try:
+              size = max(24, min(72, int(os.environ.get('CAPTION_SIZE_INPUT', '48'))))
+          except ValueError:
+              raise SystemExit('caption_size must be a number from 24 to 72.')
+          config['auto_match'] = enabled('AUTO_MATCH_INPUT')
+          config.setdefault('captions', {})['caption_mode'] = mode
+          config['captions']['size'] = size
+          config['captions']['card_size'] = size
+          config.setdefault('music', {})['enabled'] = enabled('MUSIC_ON_INPUT')
+          Path('/tmp/config-render.yaml').write_text(yaml.safe_dump(config, sort_keys=False), encoding='utf-8')
+          Path('/tmp/shorts-enabled.txt').write_text('true' if enabled('SHORTS_ON_INPUT') else 'false', encoding='utf-8')
+          print('RENDER_SETTINGS=' + str({'caption_mode': mode, 'caption_size': size, 'music_on': config['music']['enabled'], 'shorts_on': enabled('SHORTS_ON_INPUT'), 'auto_match': config['auto_match']}))
+          PY
       - name: Render landscape MP4
         if: ${{ !inputs.preview_only }}
         id: render_landscape
@@ -232,7 +264,7 @@ jobs:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
           set -o pipefail
-          python render.py "projects/${PROJECT_INPUT}" 2>&1 | tee /tmp/render-main.log
+          python render.py "projects/${PROJECT_INPUT}" --config /tmp/config-render.yaml 2>&1 | tee /tmp/render-main.log
       - name: Render caption-card MP4
         if: ${{ !inputs.preview_only }}
         id: render_card
@@ -258,7 +290,7 @@ jobs:
           if voice is None:
               raise SystemExit("No voice file found for caption-card render.")
           shutil.copy2(voice, target / voice.name)
-          config = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
+          config = yaml.safe_load(Path("/tmp/config-render.yaml").read_text(encoding="utf-8")) if Path("/tmp/config-render.yaml").is_file() else yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
           config["captions"]["caption_mode"] = "card"
           Path("/tmp/config-card.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
           PY
@@ -273,6 +305,7 @@ jobs:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
           SHORTS_START: ${{ github.event.inputs.shorts_start || '0' }}
           SHORTS_END: ${{ github.event.inputs.shorts_end || '10' }}
+          SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
         run: |
           python - <<'PY'
           import os
@@ -320,6 +353,7 @@ jobs:
           OUTCOME_ALIGNMENT_TESTS: ${{ steps.alignment_tests.outcome }}
           OUTCOME_MATCHER_SELF_TEST: ${{ steps.matcher_self_test.conclusion }}
           OUTCOME_ENSURE_SAMPLE: ${{ steps.ensure_sample.outcome }}
+          OUTCOME_PREVIEW_MATCHING: ${{ steps.preview_matching.outcome }}
           OUTCOME_RENDER_LANDSCAPE: ${{ steps.render_landscape.outcome }}
           OUTCOME_RENDER_CARD: ${{ steps.render_card.outcome }}
           OUTCOME_RENDER_SHORTS: ${{ steps.render_shorts.outcome }}
@@ -341,6 +375,7 @@ jobs:
               ("OUTCOME_ALIGNMENT_TESTS", "Run alignment unit tests", None),
               ("OUTCOME_MATCHER_SELF_TEST", "Run image matcher self-test", "/tmp/matcher-self-test.log"),
               ("OUTCOME_ENSURE_SAMPLE", "Ensure sample project and offline inputs", None),
+              ("OUTCOME_PREVIEW_MATCHING", "Preview-only CLIP image matching", None),
               ("OUTCOME_RENDER_LANDSCAPE", "Render landscape MP4", "/tmp/render-main.log"),
               ("OUTCOME_RENDER_CARD", "Render caption-card MP4", "/tmp/render-card.log"),
               ("OUTCOME_RENDER_SHORTS", "Render vertical Shorts MP4", None),
@@ -364,7 +399,7 @@ jobs:
               print("FIRST_FAILURE=none before final self-check")
           PY
       - name: Final self-check and summary table
-        if: always()
+        if: ${{ always() && !inputs.preview_only }}
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
@@ -475,7 +510,9 @@ jobs:
           card = output / f"{name}-card.mp4"
           shorts = output / f"{name}-shorts.mp4"
           check("Caption-card MP4 exists", card.is_file() and card.stat().st_size > 0, card)
-          check("Shorts MP4 exists", shorts.is_file() and shorts.stat().st_size > 0, shorts)
+          shorts_enabled = os.environ.get("SHORTS_ON_INPUT", "true").lower() not in {"false", "0", "no", "off"}
+          check("Shorts MP4 exists", (shorts.is_file() and shorts.stat().st_size > 0) if shorts_enabled else True,
+                shorts if shorts_enabled else "Shorts disabled by settings")
           check(".srt exists", srt.is_file() and srt.stat().st_size > 0, srt)
           notes = output / "notes.txt"
           check("notes.txt exists", notes.is_file() and notes.stat().st_size > 0, notes)
