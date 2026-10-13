@@ -42,6 +42,15 @@ def parse_script(project_dir: Path, image_matches=None):
     blocks = [b.strip() for b in re.split(r"\n\s*\n", raw) if b.strip()]
     folder = project_dir / "images"
     imgs = sorted([p for p in folder.glob("*") if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}], key=_natural) if folder.exists() else []
+    manual_matches = _read_match_yaml(project_dir / "match.yaml")
+    if manual_matches is not None:
+        by_name = {image.name: image for image in imgs}
+        for scene_number, names in manual_matches.items():
+            if scene_number < 1:
+                raise ValueError(f"match.yaml contains invalid scene number {scene_number}.")
+            for name in names:
+                if name not in by_name:
+                    raise FileNotFoundError(f"match.yaml scene {scene_number} references missing image: {name}")
     scenes = []
     music = None
     for n, block in enumerate(blocks, 1):
@@ -66,7 +75,12 @@ def parse_script(project_dir: Path, image_matches=None):
             continue
         if not body:
             raise ValueError(f"Paragraph {n} has no spoken text after removing IMG: hints.")
-        found = image_matches.get(n, []) if image_matches is not None else [p for p in imgs if _num(p.name) == n]
+        if image_matches is not None:
+            found = image_matches.get(n, [])
+        elif manual_matches is not None:
+            found = manual_matches.get(n, [])
+        else:
+            found = [p for p in imgs if _num(p.name) == n]
         found = [Path(p) if isinstance(p, (str, Path)) else p for p in found]
         if not found and image_matches is None:
             raise FileNotFoundError(f"Missing image for paragraph {n}: expected {n:02d}.png (or {n:02d}a.png, {n:02d}b.png, etc.) in {folder}")

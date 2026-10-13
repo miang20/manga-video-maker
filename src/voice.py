@@ -1,6 +1,7 @@
 from __future__ import annotations
 import shutil
 import subprocess
+import re
 from pathlib import Path
 from faster_whisper import WhisperModel
 from .utils import run
@@ -14,15 +15,60 @@ def find_voice_file(project: Path) -> Path | None:
             return candidate
     return None
 
+def _audio_duration(path: Path) -> float:
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
+        check=True, capture_output=True, text=True,
+    )
+    return max(0.0, float(result.stdout.strip() or 0.0))
+
+
+def _edge_silence(source: Path, threshold_db: float, min_silence: float, total: float) -> tuple[float, float]:
+    probe = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-i", str(source), "-af",
+         f"silencedetect=noise={threshold_db}dB:d={min_silence}", "-f", "null", "-"],
+        capture_output=True, text=True,
+    )
+    log = probe.stderr
+    starts = [float(value) for value in re.findall(r"silence_start:\s*([0-9.]+)", log)]
+    ends = [float(value) for value in re.findall(r"silence_end:\s*([0-9.]+)", log)]
+    leading = ends[0] if starts and ends and starts[0] <= 0.05 else 0.0
+    trailing = total - starts[-1] if starts and ends and ends[-1] >= total - 0.10 and starts[-1] < total else 0.0
+    return max(0.0, leading), max(0.0, trailing)
+
+
 def prepare_voice(source: Path, target: Path, config: dict) -> None:
     audio = config.get("audio", {})
     silence = float(audio.get("silence_threshold_db", -48))
     min_silence = float(audio.get("silence_min_seconds", .15))
-    # Detect leading/trailing silence, preserve the interior, convert all supported input codecs.
-    run(["ffmpeg","-y","-i",source,"-af",
-         f"silenceremove=start_periods=1:start_duration={min_silence}:start_threshold={silence}dB:stop_periods=1:stop_duration={min_silence}:stop_threshold={silence}dB,"
-         f"loudnorm=I={float(audio.get('target_lufs',-16))}:TP={float(audio.get('true_peak_db',-1.5))}:LRA={float(audio.get('lra',11))},aresample={int(audio.get('sample_rate',44100))}",
-         "-ar",str(int(audio.get("sample_rate",44100))),"-ac","2","-c:a","pcm_s16le",target])
+    sample_rate = int(audio.get("sample_rate", 44100))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(target.stem + ".edge-trim.wav")
+    original_duration = _audio_duration(source)
+    removed_start, removed_end = _edge_silence(source, silence, min_silence, original_duration)
+    # Reverse-and-trim ensures only the two outer edges are removed.
+    edge_filter = (
+        f"silenceremove=start_periods=1:start_duration={min_silence}:start_threshold={silence}dB,"
+        "areverse,"
+        f"silenceremove=start_periods=1:start_duration={min_silence}:start_threshold={silence}dB,"
+        "areverse"
+    )
+    try:
+        run(["ffmpeg", "-y", "-i", source, "-af", edge_filter,
+             "-ar", str(sample_rate), "-ac", "2", "-c:a", "pcm_s16le", temporary])
+        trimmed_duration = _audio_duration(temporary)
+        run(["ffmpeg", "-y", "-i", temporary, "-af",
+             f"loudnorm=I={float(audio.get('target_lufs', -16))}:TP={float(audio.get('true_peak_db', -1.5))}:LRA={float(audio.get('lra', 11))},aresample={sample_rate}",
+             "-ar", str(sample_rate), "-ac", "2", "-c:a", "pcm_s16le", target])
+    finally:
+        temporary.unlink(missing_ok=True)
+    print(
+        f"VOICE_TRIM original={original_duration:.2f}s; trimmed={trimmed_duration:.2f}s; "
+        f"removed_start={removed_start:.2f}s; removed_end={removed_end:.2f}s; "
+        f"removed_total={max(0.0, original_duration - trimmed_duration):.2f}s"
+    )
+
 
 def synthesize(text: str, path: Path, config: dict) -> list[dict]:
     """Generate offline narration; never call a network TTS service."""

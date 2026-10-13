@@ -28,11 +28,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        id: checkout
       - uses: actions/setup-python@v5
+        id: setup_python
         with:
           python-version: "3.11"
           cache: pip
       - name: Cache CLIP model
+        id: cache_clip
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface/hub
@@ -40,6 +43,7 @@ jobs:
           restore-keys: |
             clip-vit-b-32-${{ runner.os }}-
       - name: Cache faster-whisper model
+        id: cache_whisper
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface/hub
@@ -47,12 +51,16 @@ jobs:
           restore-keys: |
             faster-whisper-${{ runner.os }}-base.en-
       - name: Install FFmpeg and fonts
+        id: install_ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core espeak-ng
       - name: Install dependencies
+        id: install_dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
       - name: Install optional Nunito font
+        id: install_font
         run: python setup_fonts.py
       - name: Run syntax and YAML validation
+        id: syntax_validation
         run: |
           python -m py_compile render.py app.py setup_fonts.py src/*.py tests/*.py
           python - <<'PY'
@@ -66,10 +74,22 @@ jobs:
           print("YAML_VALIDATION=PASS")
           PY
       - name: Run alignment unit tests
+        id: alignment_tests
         run: python -m unittest discover -s tests -v
       - name: Run image matcher self-test
-        run: python -m unittest tests.test_matcher -v
+        id: matcher_self_test
+        continue-on-error: true
+        run: |
+          if python -m unittest discover -s tests -p 'test_matcher.py' -v 2>&1 | tee /tmp/matcher-self-test.log; then
+            echo "IMAGE_MATCHER_SELF_TEST=PASS"
+          else
+            status=$?
+            echo "IMAGE_MATCHER_SELF_TEST=FAIL (exit $status)"
+            tail -n 30 /tmp/matcher-self-test.log
+            exit "$status"
+          fi
       - name: Ensure sample project and offline inputs
+        id: ensure_sample
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
@@ -77,7 +97,7 @@ jobs:
           import os
           import subprocess
           from pathlib import Path
-          from src.sample_assets import ensure_sample_project, ensure_test_voice
+          from src.sample_assets import ensure_sample_project, ensure_test_voice, ensure_thumbnail
 
           name = os.environ["PROJECT_INPUT"].strip()
           if not name or "/" in name or chr(92) in name or name in {".", ".."}:
@@ -85,6 +105,7 @@ jobs:
           project = Path("projects") / name
           if name == "video-001":
               ensure_sample_project(project)
+          ensure_thumbnail(project, Path("output"))
           if not (project / "script.txt").is_file():
               raise SystemExit(f"Missing script file: {project / 'script.txt'}")
           voice_paths = [project / f"voice{ext}" for ext in (".mp3", ".wav", ".m4a", ".ogg")]
@@ -118,12 +139,14 @@ jobs:
           print(f"PROJECT_READY={project}")
           PY
       - name: Render landscape MP4
+        id: render_landscape
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
           set -o pipefail
           python render.py "projects/${PROJECT_INPUT}" 2>&1 | tee /tmp/render-main.log
       - name: Render caption-card MP4
+        id: render_card
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
@@ -139,6 +162,8 @@ jobs:
           (target / "images").mkdir(parents=True, exist_ok=True)
           shutil.copy2(source / "script.txt", target / "script.txt")
           shutil.copytree(source / "images", target / "images", dirs_exist_ok=True)
+          if (source / "match.yaml").is_file():
+              shutil.copy2(source / "match.yaml", target / "match.yaml")
           voice = next((source / f"voice{ext}" for ext in (".mp3", ".wav", ".m4a", ".ogg")
                         if (source / f"voice{ext}").is_file()), None)
           if voice is None:
@@ -153,6 +178,7 @@ jobs:
           python render.py "projects/${PROJECT_INPUT}-card" --config /tmp/config-card.yaml 2>&1 | tee /tmp/render-card.log
           cp /tmp/landscape-notes.txt output/notes.txt
       - name: Render vertical Shorts MP4
+        id: render_shorts
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
           SHORTS_START: ${{ github.event.inputs.shorts_start || '0' }}
@@ -173,6 +199,7 @@ jobs:
                       int(cfg.get("video", {}).get("fps", 24)), int(cfg.get("video", {}).get("crf", 20)))
           print(f"SHORTS_OK={target}")
       - name: Verify MP4 streams and duration
+        id: verify_outputs
         run: |
           python - <<'PY'
           import json, subprocess
@@ -187,14 +214,64 @@ jobs:
               if not audio: raise SystemExit(f"{video} has no audio stream")
               print(f"VERIFIED {video}: {probe['format'].get('duration')} sec, audio={audio[0].get('codec_name')}, sample_rate={audio[0].get('sample_rate')}")
           PY
-      - name: Upload all output files
+      - name: Record first workflow error
+        id: record_first_error
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: manga-video-${{ github.event.inputs.project || 'video-001' }}
-          path: output/*
-          if-no-files-found: warn
-          retention-days: 14
+        env:
+          OUTCOME_CHECKOUT: ${{ steps.checkout.outcome }}
+          OUTCOME_SETUP_PYTHON: ${{ steps.setup_python.outcome }}
+          OUTCOME_CACHE_CLIP: ${{ steps.cache_clip.outcome }}
+          OUTCOME_CACHE_WHISPER: ${{ steps.cache_whisper.outcome }}
+          OUTCOME_INSTALL_FFMPEG: ${{ steps.install_ffmpeg.outcome }}
+          OUTCOME_INSTALL_DEPENDENCIES: ${{ steps.install_dependencies.outcome }}
+          OUTCOME_INSTALL_FONT: ${{ steps.install_font.outcome }}
+          OUTCOME_SYNTAX_VALIDATION: ${{ steps.syntax_validation.outcome }}
+          OUTCOME_ALIGNMENT_TESTS: ${{ steps.alignment_tests.outcome }}
+          OUTCOME_MATCHER_SELF_TEST: ${{ steps.matcher_self_test.outcome }}
+          OUTCOME_ENSURE_SAMPLE: ${{ steps.ensure_sample.outcome }}
+          OUTCOME_RENDER_LANDSCAPE: ${{ steps.render_landscape.outcome }}
+          OUTCOME_RENDER_CARD: ${{ steps.render_card.outcome }}
+          OUTCOME_RENDER_SHORTS: ${{ steps.render_shorts.outcome }}
+          OUTCOME_VERIFY_OUTPUTS: ${{ steps.verify_outputs.outcome }}
+        run: |
+          mkdir -p output
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          ordered = [
+              ("OUTCOME_CHECKOUT", "Checkout", None),
+              ("OUTCOME_SETUP_PYTHON", "Set up Python", None),
+              ("OUTCOME_CACHE_CLIP", "Cache CLIP model", None),
+              ("OUTCOME_CACHE_WHISPER", "Cache faster-whisper model", None),
+              ("OUTCOME_INSTALL_FFMPEG", "Install FFmpeg and fonts", None),
+              ("OUTCOME_INSTALL_DEPENDENCIES", "Install dependencies", None),
+              ("OUTCOME_INSTALL_FONT", "Install optional Nunito font", None),
+              ("OUTCOME_SYNTAX_VALIDATION", "Run syntax and YAML validation", None),
+              ("OUTCOME_ALIGNMENT_TESTS", "Run alignment unit tests", None),
+              ("OUTCOME_MATCHER_SELF_TEST", "Run image matcher self-test", "/tmp/matcher-self-test.log"),
+              ("OUTCOME_ENSURE_SAMPLE", "Ensure sample project and offline inputs", None),
+              ("OUTCOME_RENDER_LANDSCAPE", "Render landscape MP4", "/tmp/render-main.log"),
+              ("OUTCOME_RENDER_CARD", "Render caption-card MP4", "/tmp/render-card.log"),
+              ("OUTCOME_RENDER_SHORTS", "Render vertical Shorts MP4", None),
+              ("OUTCOME_VERIFY_OUTPUTS", "Verify MP4 streams and duration", None),
+          ]
+          failed = next((item for item in ordered if os.environ.get(item[0]) == "failure"), None)
+          destination = Path("output/first-error.txt")
+          if failed:
+              _, step_name, log_path = failed
+              detail = f"Step outcome: failure ({failed[0]})"
+              if log_path and Path(log_path).is_file():
+                  lines = [line.rstrip() for line in Path(log_path).read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
+                  if lines:
+                      detail = "\n".join(lines[-15:])
+              message = f"Step: {step_name}\nError:\n{detail}\n"
+              if not destination.is_file() or not destination.stat().st_size:
+                  destination.write_text(message, encoding="utf-8")
+              print("FIRST_FAILURE_RECORDED")
+              print(destination.read_text(encoding="utf-8"))
+          else:
+              print("FIRST_FAILURE=none before final self-check")
+          PY
       - name: Final self-check and summary table
         if: always()
         env:
@@ -211,10 +288,28 @@ jobs:
           project = Path("projects") / name
           output = Path("output")
           results = []
+          first_error_path = output / "first-error.txt"
+          first_error_text = first_error_path.read_text(encoding="utf-8", errors="replace").strip() if first_error_path.is_file() else ""
+          first_step = next((line.split(":", 1)[1].strip() for line in first_error_text.splitlines() if line.startswith("Step:")), "")
+          if first_error_text:
+              print("\nFIRST FAILURE (recorded before summary):")
+              print(first_error_text)
+          else:
+              print("\nFIRST FAILURE: none recorded before final self-check")
 
           def check(label, ok, detail):
-              results.append((label, bool(ok), str(detail)))
-              print(f"{label}: {'PASS' if ok else 'FAIL'} - {detail}")
+              status = "PASS" if ok else "FAIL"
+              if not ok and first_step:
+                  skip_steps = {
+                      "Caption-card MP4 exists": "Render caption-card MP4",
+                      "Shorts MP4 exists": "Render vertical Shorts MP4",
+                      "Thumbnail exists": "Ensure sample project and offline inputs",
+                  }
+                  required_step = skip_steps.get(label)
+                  if required_step and first_step != required_step:
+                      status = "SKIPPED"
+              results.append((label, status, str(detail)))
+              print(f"{label}: {status} - {detail}")
 
           def probe(path):
               return json.loads(subprocess.check_output([
@@ -302,10 +397,27 @@ jobs:
           print("\nSUMMARY TABLE")
           print("| Check | Result | Detail |")
           print("|---|---|---|")
-          for label, ok, detail in results:
-              print(f"| {label} | {'PASS' if ok else 'FAIL'} | {detail.replace('|', '/')} |")
-          failed = [label for label, ok, _ in results if not ok]
+          for label, status, detail in results:
+              print(f"| {label} | {status} | {detail.replace('|', '/')} |")
+          failed = [label for label, status, _ in results if status == "FAIL"]
+          if failed and not first_error_text:
+              first_label = failed[0]
+              first_error_text = f"Step: Final self-check\nError: {first_label}\n"
+              first_error_path.write_text(first_error_text, encoding="utf-8")
+              first_step = "Final self-check"
+              print("FIRST_FAILURE_RECORDED")
+              print(first_error_text)
+          if first_error_text and not failed:
+              failed.append("Earlier workflow step failed: " + first_step)
           print(f"SELF_CHECK_SUMMARY={'FAIL' if failed else 'PASS'}")
           if failed:
-              raise SystemExit("Self-check failed: " + ", ".join(failed))
+              raise SystemExit("First failure: " + first_step + "; self-check failures: " + ", ".join(failed))
           PY
+      - name: Upload all output files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: manga-video-${{ github.event.inputs.project || 'video-001' }}
+          path: output/*
+          if-no-files-found: warn
+          retention-days: 14

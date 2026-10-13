@@ -47,7 +47,14 @@ def render_project(project, config_path=None):
         from src.sample_assets import ensure_sample_project
         ensure_sample_project(project)
 
-    scenes = parse_script(project)
+    match_rows = None
+    if bool(cfg.get("auto_match", True)):
+        scenes = parse_script(project, image_matches={})
+        if any(scene.kind == "image" for scene in scenes):
+            from src.matcher import match_project
+            _, match_rows = match_project(project, scenes, ROOT / "output", cfg)
+    else:
+        scenes = parse_script(project)
     if not scenes:
         raise RuntimeError("Project has no scenes.")
     video_cfg = cfg.get("video", {})
@@ -79,13 +86,13 @@ def render_project(project, config_path=None):
     if font is None:
         raise FileNotFoundError("No caption font found. Run python setup_fonts.py or install fonts-dejavu-core.")
 
-    # Normalize supplied image inputs once; preserve originals and keep the parser's scene mapping.
+    # Optimize exactly the files selected for each scene; preserve CLIP/manual assignments.
     image_scenes = [scene for scene in scenes if scene.kind == "image"]
-    if image_scenes and all(len(scene.image_paths or []) == 1 for scene in image_scenes):
-        prepared_images = prepare_images(project, image_scenes)
-        image_iter = iter(prepared_images)
+    if image_scenes:
+        prepared_images = iter(prepare_images(project, image_scenes))
         for scene in image_scenes:
-            scene.image_paths = [next(image_iter)]
+            count = len(scene.image_paths or [])
+            scene.image_paths = [next(prepared_images) for _ in range(count)]
 
     supplied_voice = find_voice_file(project)
     generated_test_voice = False
@@ -246,20 +253,17 @@ def render_project(project, config_path=None):
     notes_path.write_text("\n".join(notes) + "\n", encoding="utf-8")
     if match_rows is not None:
         with notes_path.open("a", encoding="utf-8") as handle:
-            handle.write("\\n\\nIMAGE SCENE MATCH TABLE\\n")
-            handle.write("Scene | first 6 words | matched image | similarity score | confidence\\n")
-            handle.write("--- | --- | --- | --- | ---\\n")
+            handle.write("\n\nIMAGE SCENE MATCH TABLE\n")
+            handle.write("Scene | first 6 words | matched image | similarity score | confidence\n")
+            handle.write("--- | --- | --- | --- | ---\n")
             for row in match_rows:
                 words = " ".join(row["text"].split()[:6]).replace("|", "/")
                 names = ", ".join(path.name for path in row["images"]) if row["images"] else "(none)"
                 score = f"{row['score']:.3f}" if isinstance(row["score"], (int, float)) else "-"
-                handle.write(f"{row['scene']} | {words} | {names} | {score} | {row['confidence']}\\n")
+                handle.write(f"{row['scene']} | {words} | {names} | {score} | {row['confidence']}\n")
 
-    thumbnail_dir = project / "thumbnail"
-    if thumbnail_dir.is_dir():
-        thumb = next((p for p in sorted(thumbnail_dir.iterdir()) if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}), None)
-        if thumb:
-            shutil.copy2(thumb, ROOT / "output" / f"{project.name}-thumbnail{thumb.suffix.lower()}")
+    from src.sample_assets import ensure_thumbnail
+    ensure_thumbnail(project, ROOT / "output")
     streams = ffprobe(output).get("streams", [])
     if not any(s.get("codec_type") == "video" for s in streams):
         raise RuntimeError("Rendered MP4 has no video stream.")
