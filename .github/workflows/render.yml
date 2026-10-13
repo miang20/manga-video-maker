@@ -16,9 +16,9 @@ on:
         required: false
         type: string
       test_voice:
-        description: "Generate a temporary test voice.mp3 at 22.05 kHz with leading silence (acceptance test only)"
+        description: "Compatibility option; missing voice is always generated automatically"
         required: false
-        default: false
+        default: true
         type: boolean
 permissions:
   contents: read
@@ -45,72 +45,105 @@ jobs:
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
       - name: Install optional Nunito font
         run: python setup_fonts.py
+      - name: Run syntax and YAML validation
+        run: |
+          python -m py_compile render.py app.py setup_fonts.py src/*.py tests/*.py
+          python - <<'PY'
+          import yaml
+          with open("config.yaml", encoding="utf-8") as f:
+              assert isinstance(yaml.safe_load(f), dict), "config.yaml must contain a YAML mapping"
+          with open(".github/workflows/render.yml", encoding="utf-8") as f:
+              workflow = yaml.safe_load(f)
+          assert isinstance(workflow, dict) and isinstance(workflow.get("jobs"), dict), "render.yml is not a valid workflow mapping"
+          print("PY_COMPILE=PASS")
+          print("YAML_VALIDATION=PASS")
+          PY
       - name: Run alignment unit tests
         run: python -m unittest discover -s tests -v
-      - name: Validate project
+      - name: Ensure sample project and offline inputs
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
           python - <<'PY'
           import os
+          import subprocess
           from pathlib import Path
-          name=os.environ["PROJECT_INPUT"].strip()
-          if not name or "/" in name or chr(92) in name or name in {".",".."}:
+          from src.sample_assets import ensure_sample_project, ensure_test_voice
+
+          name = os.environ["PROJECT_INPUT"].strip()
+          if not name or "/" in name or chr(92) in name or name in {".", ".."}:
               raise SystemExit("Project must be one folder name such as video-001.")
-          p=Path("projects")/name
-          if not (p/"script.txt").is_file(): raise SystemExit(f"Missing script file: {p/'script.txt'}")
-          print(f"Project ready: {p}")
+          project = Path("projects") / name
+          if name == "video-001":
+              ensure_sample_project(project)
+          if not (project / "script.txt").is_file():
+              raise SystemExit(f"Missing script file: {project / 'script.txt'}")
+          voice_paths = [project / f"voice{ext}" for ext in (".mp3", ".wav", ".m4a", ".ogg")]
+          generated_voice = not any(path.is_file() and path.stat().st_size for path in voice_paths)
+          if generated_voice:
+              ensure_test_voice(project)
+              with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
+                  env_file.write("SELF_TEST_MODE=true\n")
+              print("SELF_TEST_MODE=PASS; generated offline test voice")
+          else:
+              with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
+                  env_file.write("SELF_TEST_MODE=false\n")
+              print("SELF_TEST_MODE=PASS; uploaded voice found")
+          music_dir = Path("assets/music")
+          music_dir.mkdir(parents=True, exist_ok=True)
+          has_music = any(path.is_file() and path.suffix.lower() == ".mp3" for path in music_dir.iterdir())
+          pad = music_dir / "000-self-test-pad.mp3"
+          if generated_voice or not has_music:
+              subprocess.run([
+                  "ffmpeg", "-y", "-f", "lavfi", "-i",
+                  "aevalsrc=0.020*sin(2*PI*110*t)+0.015*sin(2*PI*164.81*t)+0.010*sin(2*PI*220*t):s=44100:d=120",
+                  "-af", "lowpass=f=900,afade=t=in:st=0:d=2,afade=t=out:st=115:d=5",
+                  "-codec:a", "libmp3lame", "-b:a", "96k", str(pad)
+              ], check=True, capture_output=True, text=True)
+              print(f"MUSIC_PAD_GENERATED={pad}")
+          image_files = [path for path in (project / "images").glob("*")
+                         if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}]
+          if name == "video-001" and len(image_files) < 4:
+              raise SystemExit(f"Sample project needs at least 4 numbered images; found {len(image_files)}")
+          print(f"SAMPLE_IMAGES_COUNT={len(image_files)}")
+          print(f"PROJECT_READY={project}")
           PY
-      - name: Generate temporary acceptance-test voice.mp3 with leading silence
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
-        env:
-          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
-        run: |
-          python - <<'PY'
-          import os, subprocess
-          from pathlib import Path
-          project = Path("projects") / os.environ["PROJECT_INPUT"]
-          text = " ".join(line.strip() for line in (project / "script.txt").read_text(encoding="utf-8").splitlines() if line.strip())
-          raw = Path("/tmp/acceptance-voice.wav")
-          target = project / "voice.mp3"
-          result = subprocess.run(["espeak-ng", "-v", "en-us", "-s", "145", "-w", str(raw), text], capture_output=True, text=True)
-          if result.returncode or not raw.is_file() or raw.stat().st_size < 1000:
-              raise SystemExit(f"Could not generate source test voice: {result.stderr}")
-          subprocess.run(["ffmpeg", "-y", "-i", str(raw), "-af", "adelay=1500|1500", "-ar", "22050", "-ac", "2", "-codec:a", "libmp3lame", "-b:a", "96k", str(target)], check=True, capture_output=True, text=True)
-          print(f"Generated test MP3 with 1.5s leading silence at 22.05 kHz: {target} ({target.stat().st_size} bytes)")
-          PY
-      - name: Generate quiet music pad and test thumbnail
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
-        run: |
-          mkdir -p assets/music projects/video-001/thumbnail
-          python -c "from pathlib import Path; from src.sample_assets import ensure_sample_images; ensure_sample_images(Path('projects/video-001'))"
-          ffmpeg -y -f lavfi -i "anoisesrc=color=pink:amplitude=0.01:sample_rate=44100:duration=60" -codec:a libmp3lame -b:a 96k assets/music/000-acceptance-pad.mp3
-          cp projects/video-001/images/01.png projects/video-001/thumbnail/acceptance-thumbnail.png
-          ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=nw=1 assets/music/000-acceptance-pad.mp3
       - name: Render landscape MP4
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
-        run: python render.py "projects/${PROJECT_INPUT}"
-      - name: Test black caption-card mode
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
+        run: |
+          set -o pipefail
+          python render.py "projects/${PROJECT_INPUT}" 2>&1 | tee /tmp/render-main.log
+      - name: Render caption-card MP4
+        env:
+          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
           python - <<'PY'
+          import os
           import shutil
           from pathlib import Path
           import yaml
-          source = Path("projects/video-001")
-          target = Path("projects/video-001-card")
+          name = os.environ["PROJECT_INPUT"]
+          source = Path("projects") / name
+          target = Path("projects") / f"{name}-card"
+          target.mkdir(parents=True, exist_ok=True)
           (target / "images").mkdir(parents=True, exist_ok=True)
           shutil.copy2(source / "script.txt", target / "script.txt")
-          shutil.copy2(source / "voice.mp3", target / "voice.mp3")
           shutil.copytree(source / "images", target / "images", dirs_exist_ok=True)
+          voice = next((source / f"voice{ext}" for ext in (".mp3", ".wav", ".m4a", ".ogg")
+                        if (source / f"voice{ext}").is_file()), None)
+          if voice is None:
+              raise SystemExit("No voice file found for caption-card render.")
+          shutil.copy2(voice, target / voice.name)
           config = yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
           config["captions"]["caption_mode"] = "card"
           Path("/tmp/config-card.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
           PY
-          python render.py projects/video-001-card --config /tmp/config-card.yaml
-      - name: Render optional Shorts MP4
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'workflow_dispatch' && inputs.shorts_start != '' && inputs.shorts_end != '') }}
+          cp output/notes.txt /tmp/landscape-notes.txt
+          set -o pipefail
+          python render.py "projects/${PROJECT_INPUT}-card" --config /tmp/config-card.yaml 2>&1 | tee /tmp/render-card.log
+          cp /tmp/landscape-notes.txt output/notes.txt
+      - name: Render vertical Shorts MP4
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
           SHORTS_START: ${{ github.event.inputs.shorts_start || '0' }}
@@ -121,14 +154,15 @@ jobs:
           from pathlib import Path
           from src.shorts import make_shorts
           from src.utils import load_config
+          name = os.environ["PROJECT_INPUT"]
+          source = Path("output") / f"{name}.mp4"
+          target = Path("output") / f"{name}-shorts.mp4"
+          if not source.is_file():
+              raise SystemExit(f"Landscape source is missing: {source}")
           cfg = load_config()
-          project = os.environ["PROJECT_INPUT"]
-          source = Path("output") / (project + ".mp4")
-          target = Path("output") / (project + "-shorts.mp4")
           make_shorts(source, target, float(os.environ["SHORTS_START"]), float(os.environ["SHORTS_END"]),
                       int(cfg.get("video", {}).get("fps", 24)), int(cfg.get("video", {}).get("crf", 20)))
-          print("SHORTS_OK=" + str(target))
-          PY
+          print(f"SHORTS_OK={target}")
       - name: Verify MP4 streams and duration
         run: |
           python - <<'PY'
@@ -144,77 +178,125 @@ jobs:
               if not audio: raise SystemExit(f"{video} has no audio stream")
               print(f"VERIFIED {video}: {probe['format'].get('duration')} sec, audio={audio[0].get('codec_name')}, sample_rate={audio[0].get('sample_rate')}")
           PY
-      - name: Verify companion artifacts and loudness
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
-        run: |
-          test -s output/video-001.mp4
-          test -s output/video-001.srt
-          test -s output/notes.txt
-          test -s output/video-001-thumbnail.png
-          test -s output/video-001-card.mp4
-          test -s output/video-001-shorts.mp4
-          python - <<'PY'
-          import json, subprocess
-          from pathlib import Path
-          video=Path("output/video-001.mp4")
-          probe=json.loads(subprocess.check_output(["ffprobe","-v","error","-show_streams","-show_format","-of","json",str(video)]))
-          audio=next(s for s in probe["streams"] if s.get("codec_type")=="audio")
-          assert int(audio["sample_rate"]) == 44100, audio
-          measured=subprocess.run(["ffmpeg","-hide_banner","-i",str(video),"-af","loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json","-f","null","-"],capture_output=True,text=True)
-          print("AUDIO_STREAM_SAMPLE_RATE="+audio["sample_rate"])
-          print("LOUDNORM_MEASUREMENT:")
-          print(measured.stderr[-1800:])
-          print("COMPANION_ARTIFACTS_OK: SRT, notes, thumbnail")
-          if "input_i" not in measured.stderr: raise SystemExit("Could not measure output loudness")
-          PY
-      - uses: actions/upload-artifact@v4
+      - name: Upload all output files
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: manga-video-${{ github.event.inputs.project || 'video-001' }}
           path: output/*
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
-
-      - name: Final output and audio diagnostics
+      - name: Final self-check and summary table
         if: always()
+        env:
+          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
           python - <<'PY'
-          import json, subprocess
+          import json
+          import os
+          import re
+          import subprocess
           from pathlib import Path
-          outputs = sorted(p for p in Path("output").glob("*") if p.is_file())
-          print("OUTPUT_FILE_LIST:")
-          for item in outputs:
-              print(f"OUTPUT_FILE: {item} ({item.stat().st_size} bytes)")
-          videos = [p for p in outputs if p.suffix.lower() == ".mp4"]
-          if not videos:
-              print("FINAL_DIAGNOSTICS=FAIL: no MP4 files found")
-              raise SystemExit(1)
-          failed = False
-          for video in videos:
-              probe = json.loads(subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries", "stream=sample_rate", "-of", "json", str(video)], text=True))
-              audio = probe.get("streams", [])
-              if not audio:
-                  print(f"AUDIO_SAMPLE_RATE_HZ {video}=MISSING")
-                  failed = True
-                  continue
-              rate = int(audio[0].get("sample_rate", 0))
-              print(f"AUDIO_SAMPLE_RATE_HZ {video}={rate}")
-              measured = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(video), "-af", "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"], capture_output=True, text=True)
+
+          name = os.environ["PROJECT_INPUT"]
+          project = Path("projects") / name
+          output = Path("output")
+          results = []
+
+          def check(label, ok, detail):
+              results.append((label, bool(ok), str(detail)))
+              print(f"{label}: {'PASS' if ok else 'FAIL'} - {detail}")
+
+          def probe(path):
+              return json.loads(subprocess.check_output([
+                  "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)
+              ], text=True))
+
+          source_voice = next((project / f"voice{ext}" for ext in (".mp3", ".wav", ".m4a", ".ogg")
+                               if (project / f"voice{ext}").is_file()), None)
+          prepared_voice = project / "audio" / "voiceover.wav"
+          trim_ok = False
+          trim_detail = "source or prepared voice is missing"
+          if source_voice and prepared_voice.is_file():
+              def duration(path):
+                  return float(probe(path)["format"].get("duration", 0))
+              original_duration = duration(source_voice)
+              prepared_duration = duration(prepared_voice)
+              silence = subprocess.run(
+                  ["ffmpeg", "-hide_banner", "-i", str(source_voice),
+                   "-af", "silencedetect=noise=-48dB:d=0.15", "-f", "null", "-"],
+                  capture_output=True, text=True,
+              )
+              leading = re.search(r"silence_end:\s*([0-9.]+)", silence.stderr)
+              leading_seconds = float(leading.group(1)) if leading and "silence_start: 0" in silence.stderr else 0.0
+              removed = original_duration - prepared_duration
+              if leading_seconds >= 0.5:
+                  trim_ok = removed >= min(0.75, leading_seconds * 0.5)
+                  trim_detail = f"leading silence {leading_seconds:.2f}s; removed {removed:.2f}s"
+              else:
+                  trim_ok = prepared_duration > 0 and prepared_duration <= original_duration + 0.15
+                  trim_detail = f"no significant leading silence; source {original_duration:.2f}s, prepared {prepared_duration:.2f}s"
+          check("Voice silence trimmed", trim_ok, trim_detail)
+
+          main = output / f"{name}.mp4"
+          main_ok = main.is_file() and main.stat().st_size > 0
+          check("Landscape MP4 exists", main_ok, main)
+          if main_ok:
+              main_probe = probe(main)
+              videos = [stream for stream in main_probe["streams"] if stream.get("codec_type") == "video"]
+              audios = [stream for stream in main_probe["streams"] if stream.get("codec_type") == "audio"]
+              landscape = bool(videos and int(videos[0].get("width", 0)) > int(videos[0].get("height", 0)))
+              check("Landscape dimensions", landscape, f"{videos[0].get('width')}x{videos[0].get('height')}" if videos else "video stream missing")
+              sample_rate_ok = bool(audios and int(audios[0].get("sample_rate", 0)) == 44100)
+              check("Final audio 44.1 kHz", sample_rate_ok, audios[0].get("sample_rate") if audios else "audio stream missing")
+              measured = subprocess.run(
+                  ["ffmpeg", "-hide_banner", "-i", str(main), "-af",
+                   "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"],
+                  capture_output=True, text=True,
+              )
               start = measured.stderr.rfind("{")
               end = measured.stderr.find("}", start)
-              if start < 0 or end < 0:
-                  print(f"LOUDNESS_LUFS {video}=UNMEASURABLE")
-                  print(measured.stderr[-1200:])
-                  failed = True
-                  continue
-              report = json.loads(measured.stderr[start:end + 1])
-              loudness = report.get("input_i", "unknown")
-              print(f"LOUDNESS_LUFS {video}={loudness}")
-              try:
-                  if rate != 44100 or abs(float(loudness) - (-16.0)) > 2.5:
-                      failed = True
-              except (TypeError, ValueError):
-                  failed = True
-          print("FINAL_DIAGNOSTICS=" + ("FAIL" if failed else "PASS"))
+              loudness = None
+              if start >= 0 and end > start:
+                  try:
+                      loudness = float(json.loads(measured.stderr[start:end + 1]).get("input_i"))
+                  except (TypeError, ValueError, json.JSONDecodeError):
+                      loudness = None
+              loudness_ok = loudness is not None and abs(loudness - (-16.0)) <= 2.5
+              check("Loudness within 2.5 LU of -16 LUFS", loudness_ok,
+                    f"{loudness:.2f} LUFS" if loudness is not None else "measurement unavailable")
+          else:
+              check("Landscape dimensions", False, "landscape MP4 unavailable")
+              check("Final audio 44.1 kHz", False, "landscape MP4 unavailable")
+              check("Loudness within 2.5 LU of -16 LUFS", False, "landscape MP4 unavailable")
+
+          log = Path("/tmp/render-main.log")
+          ducking_ran = log.is_file() and "MUSIC_DUCKING=PASS" in log.read_text(encoding="utf-8", errors="replace")
+          check("Music ducking ran", ducking_ran, "sidechaincompress marker in landscape render log" if ducking_ran else "music ducking marker missing")
+
+          srt = output / f"{name}.srt"
+          captions_ok = srt.is_file() and srt.stat().st_size > 0 and any(
+              line.strip() and not line.strip().isdigit() and "-->" not in line
+              for line in srt.read_text(encoding="utf-8", errors="replace").splitlines()
+          )
+          check("Captions present", captions_ok, srt)
+          card = output / f"{name}-card.mp4"
+          shorts = output / f"{name}-shorts.mp4"
+          check("Caption-card MP4 exists", card.is_file() and card.stat().st_size > 0, card)
+          check("Shorts MP4 exists", shorts.is_file() and shorts.stat().st_size > 0, shorts)
+          check(".srt exists", srt.is_file() and srt.stat().st_size > 0, srt)
+          notes = output / "notes.txt"
+          check("notes.txt exists", notes.is_file() and notes.stat().st_size > 0, notes)
+          thumbnails = sorted(output.glob(f"{name}-thumbnail.*"))
+          check("Thumbnail exists", bool(thumbnails and thumbnails[0].stat().st_size > 0), thumbnails[0] if thumbnails else "thumbnail missing")
+
+          print("\nSUMMARY TABLE")
+          print("| Check | Result | Detail |")
+          print("|---|---|---|")
+          for label, ok, detail in results:
+              print(f"| {label} | {'PASS' if ok else 'FAIL'} | {detail.replace('|', '/')} |")
+          failed = [label for label, ok, _ in results if not ok]
+          print(f"SELF_CHECK_SUMMARY={'FAIL' if failed else 'PASS'}")
           if failed:
-              raise SystemExit(1)
+              raise SystemExit("Self-check failed: " + ", ".join(failed))
           PY

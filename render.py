@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.alignment import align_paragraphs
 from src.parser import parse_script
-from src.voice import find_voice_file, prepare_voice, synthesize, transcribe_word_timestamps
+from src.voice import find_voice_file, prepare_voice, transcribe_word_timestamps
 from src.images import prepare_images
 from src.captions import group_word_boundaries, write_ass
 from src.effects import render_still, text_card
@@ -44,8 +44,8 @@ def render_project(project, config_path=None):
     require_binary("ffmpeg")
     require_binary("ffprobe")
     if project.name == "video-001":
-        from src.sample_assets import ensure_sample_images
-        ensure_sample_images(project)
+        from src.sample_assets import ensure_sample_project
+        ensure_sample_project(project)
 
     scenes = parse_script(project)
     if not scenes:
@@ -88,11 +88,16 @@ def render_project(project, config_path=None):
             scene.image_paths = [next(image_iter)]
 
     supplied_voice = find_voice_file(project)
+    generated_test_voice = False
+    if supplied_voice is None:
+        from src.sample_assets import ensure_test_voice
+        supplied_voice = ensure_test_voice(project)
+        generated_test_voice = True
     bounds = []
     scene_intervals = []
     voice_path = audio_dir / "voiceover.wav"
     if supplied_voice:
-        print(f"[VOICE] Using uploaded narration file: {supplied_voice.name}; TTS is disabled for this render.")
+        print(f"[VOICE] Using narration file: {supplied_voice.name}; network TTS is disabled for this render.")
         prepare_voice(supplied_voice, voice_path, cfg)
         words, transcribed_duration = transcribe_word_timestamps(voice_path, transcription_cfg)
         paragraph_texts = [scene.text for scene in scenes]
@@ -101,22 +106,7 @@ def render_project(project, config_path=None):
             scene_intervals.append((float(timing["start"]), float(timing["end"])))
         bounds = words
         voice_duration = max(transcribed_duration, duration(voice_path))
-    else:
-        print("[VOICE] No uploaded voice file found; generating Edge TTS per paragraph.")
-        tts_files = []
-        cursor = 0.0
-        for scene in scenes:
-            segment_path = audio_dir / f"scene-{scene.number:02d}.mp3"
-            local = synthesize(scene.text, segment_path, cfg)
-            segment_duration = duration(segment_path)
-            if segment_duration <= 0:
-                raise RuntimeError(f"Voiceover duration is zero for paragraph {scene.number}.")
-            scene_intervals.append((cursor, cursor + segment_duration))
-            bounds.extend(_normalize_words(local, cursor))
-            tts_files.append(segment_path)
-            cursor += segment_duration
-        _concat_audio(tts_files, voice_path, sample_rate)
-        voice_duration = duration(voice_path)
+
 
     clips = []
     scene_lengths = []
@@ -232,6 +222,10 @@ def render_project(project, config_path=None):
             "-crf", str(video_cfg.get("crf", 20)), "-c:a", "aac", "-b:a", "192k",
             "-ar", str(sample_rate), "-shortest", "-movflags", "+faststart", output]
     run(cmd)
+    if music and "sidechaincompress=" in cmd[cmd.index("-filter_complex") + 1]:
+        print(f"MUSIC_DUCKING=PASS; track={music.name}; filter=sidechaincompress")
+    else:
+        print("MUSIC_DUCKING=FAIL; no music ducking filter was configured")
     # Always publish companion assets alongside the MP4 so Actions can archive them.
     def srt_time(seconds):
         ms = max(0, int(round(float(seconds) * 1000)))
@@ -245,7 +239,7 @@ def render_project(project, config_path=None):
             handle.write(f"{i}\n{srt_time(chunk['start'])} --> {srt_time(chunk['end'])}\n{chunk['text']}\n\n")
     notes_path = ROOT / "output" / "notes.txt"
     notes = [f"Project: {project.name}", f"Duration seconds: {duration(output):.2f}",
-             f"Voice source: {'uploaded' if supplied_voice else 'edge-tts'}",
+             f"Voice source: {'generated offline test voice' if generated_test_voice else 'uploaded'}",
              f"Audio sample rate: {sample_rate} Hz", f"Target loudness: {target_lufs} LUFS",
              f"Caption mode: {caption_mode}", f"Caption chunks: {len(caption_chunks)}", "Paragraph timings:"]
     notes.extend(f"{i}. {start:.2f}s - {end:.2f}s: {scene.text}" for i, (scene, (start, end)) in enumerate(zip(scenes, scene_intervals), 1))
@@ -263,7 +257,7 @@ def render_project(project, config_path=None):
         raise RuntimeError("Rendered MP4 has no audio stream.")
     if int(audio_streams[0].get("sample_rate", 0)) != sample_rate:
         raise RuntimeError(f"Expected {sample_rate} Hz final audio, got {audio_streams[0].get('sample_rate')}.")
-    print(f"RENDER_OK={output}\nDURATION_SECONDS={duration(output):.2f}\nCAPTION_CHUNKS={len(caption_chunks)}\nVOICE_SOURCE={'uploaded' if supplied_voice else 'edge-tts'}")
+    print(f"RENDER_OK={output}\nDURATION_SECONDS={duration(output):.2f}\nCAPTION_CHUNKS={len(caption_chunks)}\nVOICE_SOURCE={'generated offline test voice' if generated_test_voice else 'uploaded'}")
     return output
 
 

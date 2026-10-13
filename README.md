@@ -1,26 +1,19 @@
 # Manga Video Maker
 
-## Android quick start (Roman Urdu + English)
+## Android quick start
 
-1. GitHub par repo open karo: https://github.com/miang20/manga-video-maker
-2. `projects/_template` open karo. Copy karne ke liye **Add file → Create new file** se `projects/video-002/script.txt` banao, phir `projects/video-002/images/.gitkeep` aur `projects/video-002/thumbnail/.gitkeep` folders/files bhi banao. Ya template files ko download karke apne project folder mein upload karo.
-3. `projects/video-001` (ya apne project) open karo → **Add file → Upload files**. `script.txt`, numbered images (png/jpg/jpeg/webp), aur human narration `voice.mp3` ya `voice.wav` upload karo. Android Chrome mein option na dikhe to **⋮ → Desktop site** use karo.
-4. Commit changes to main. Uploading files does not start a render automatically.
-5. **Actions → Render Manga Video → Run workflow**, Project field mein folder name (e.g. `video-001`) do. Optional Shorts start/end seconds dono fill karo. **Run workflow** press karo.
-6. Green check ke baad run open karo, Artifacts se ZIP download karo. ZIP mein MP4, captions SRT, notes aur thumbnail (agar uploaded ho) honge.
+1. **Custom video (optional):** open [projects/video-001](https://github.com/miang20/manga-video-maker/tree/main/projects/video-001) and upload `script.txt`, numbered images, and optionally `voice.mp3` (WAV, M4A, and OGG are also accepted). For the ready-made sample, skip uploads.
+2. Open **Actions → Render Manga Video → Run workflow**. Keep the defaults (`video-001`) and press **Run workflow**. If no voice file exists, the workflow generates offline test narration with 1.5 seconds of leading silence, a quiet music pad, manga-style placeholder images, and a thumbnail. Edge TTS is not used.
+3. Wait for the run to finish, open it, and download the **manga-video-video-001** artifact ZIP. It contains the MP4s, SRT captions, `notes.txt`, and thumbnail.
 
 ## Project format
 
 - `script.txt`: paragraphs separated by a blank line; each paragraph maps to one image.
-- `voice.mp3`, `voice.wav`, `voice.m4a`, or `voice.ogg`: optional uploaded narration. Uploaded voice always takes priority; no TTS runs when it exists.
-- `images/`: supported PNG/JPG/JPEG/WebP, naturally sorted (1, 2, 10). Oversized images are optimized in a work cache; originals are not modified. Number of images must match paragraphs.
-- `thumbnail/`: optional thumbnail file copied into output.
-- `assets/music/`: optional MP3; mixed quietly under narration with sidechain ducking.
-
-Voice files are silence-trimmed, normalized to about -16 LUFS, and resampled to 44.1 kHz. faster-whisper base.en CPU/int8 supplies word timestamps; if transcript alignment is weak, a clear warning is printed and paragraph timing falls back to proportional word counts.
+- Optional narration: `voice.mp3`, `voice.wav`, `voice.m4a`, or `voice.ogg`.
+- `images/`: PNG/JPG/JPEG/WebP files, naturally sorted (1, 2, 10). Missing images in the default sample project are generated as simple black-and-white manga placeholders.
+- `thumbnail/`: optional image; the sample workflow creates one if missing.
+- `assets/music/`: optional MP3. If no music MP3 exists, the workflow creates a quiet synthetic pad and mixes it under narration with sidechain ducking.
 
 ## Outputs
 
-Landscape MP4, SRT captions, notes with duration and paragraph start times, optional copied thumbnail, and optional vertical Shorts MP4. Workflow artifacts are retained for 14 days.
-
-Acceptance workflow: a commit titled `Run voice-file acceptance test` runs the generated 22.05 kHz MP3 voice, silence-trim, music-ducking, caption-card, and artifact checks.
+The workflow uploads every file in `output/*`, including landscape MP4, caption-card MP4, vertical Shorts MP4, SRT captions, `notes.txt`, and thumbnail. A final self-check prints PASS/FAIL for voice silence trimming, 44.1 kHz audio, loudness, music ducking, captions, each MP4, SRT, notes, and thumbnail, followed by a summary table. Artifacts are retained for 14 days.

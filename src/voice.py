@@ -1,7 +1,7 @@
 from __future__ import annotations
-import asyncio, time
+import shutil
+import subprocess
 from pathlib import Path
-import edge_tts
 from faster_whisper import WhisperModel
 from .utils import run
 
@@ -24,25 +24,20 @@ def prepare_voice(source: Path, target: Path, config: dict) -> None:
          f"loudnorm=I={float(audio.get('target_lufs',-16))}:TP={float(audio.get('true_peak_db',-1.5))}:LRA={float(audio.get('lra',11))},aresample={int(audio.get('sample_rate',44100))}",
          "-ar",str(int(audio.get("sample_rate",44100))),"-ac","2","-c:a","pcm_s16le",target])
 
-async def _edge_tts(text: str, path: Path, voice: str, rate: str, pitch: str) -> list[dict]:
-    stream=edge_tts.Communicate(text,voice=voice,rate=rate,pitch=pitch); boundaries=[]
-    with path.open("wb") as out:
-        async for item in stream.stream():
-            if item["type"]=="audio": out.write(item["data"])
-            elif item["type"]=="WordBoundary":
-                start=float(item.get("offset",0))/10_000_000; end=start+float(item.get("duration",0))/10_000_000
-                boundaries.append({"text":item.get("text",""),"start":start,"end":end})
-    if not path.exists() or path.stat().st_size<1000: raise RuntimeError("Edge TTS returned an empty audio file.")
-    return boundaries
-
-def synthesize(text: str,path: Path,config: dict)->list[dict]:
-    c=config.get("voice",{}); tries=max(1,int(c.get("retries",4))); error=None
-    for attempt in range(tries):
-        try:return asyncio.run(_edge_tts(text,path,c.get("name","en-US-GuyNeural"),c.get("rate","+0%"),c.get("pitch","+0Hz")))
-        except Exception as exc:
-            error=exc; path.unlink(missing_ok=True)
-            if attempt+1<tries:time.sleep(float(c.get("retry_delay_seconds",1.5))*(attempt+1))
-    raise RuntimeError(f"Voice file missing and Edge TTS is blocked. Upload projects/<project>/voice.mp3. Edge TTS failed after {tries} attempts: {error}") from error
+def synthesize(text: str, path: Path, config: dict) -> list[dict]:
+    """Generate offline narration; never call a network TTS service."""
+    if not shutil.which("espeak-ng"):
+        raise RuntimeError("Offline narration requires espeak-ng.")
+    wav_path = path.with_suffix(".offline.wav")
+    speed = int(config.get("voice", {}).get("offline_speed", 145))
+    subprocess.run(["espeak-ng", "-v", "en-us", "-s", str(speed), "-w", str(wav_path), text],
+                   check=True, capture_output=True, text=True)
+    try:
+        run(["ffmpeg", "-y", "-i", wav_path, "-codec:a", "libmp3lame", "-b:a", "96k", path])
+    finally:
+        wav_path.unlink(missing_ok=True)
+    words, _ = transcribe_word_timestamps(path, config.get("transcription", {}))
+    return words
 
 def transcribe_word_timestamps(audio_path: Path,config: dict)->tuple[list[dict],float]:
     c=config.get("transcription",{}); model=WhisperModel(str(c.get("model","base.en")),device="cpu",compute_type="int8",download_root=str(Path(c["model_cache"]).expanduser()) if c.get("model_cache") else None)

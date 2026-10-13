@@ -8,17 +8,10 @@ from src.shorts import make_shorts
 
 st.set_page_config(page_title="Manga Video Maker", page_icon="🎬")
 st.title("Manga Video Maker")
-st.write("Upload a script, numbered manga images, and optionally your own narration for a human-sounding faceless video.")
+st.write("Upload a script and numbered manga images, plus optional narration. If narration is missing, a local offline sample voice is generated; no network TTS is used.")
 script = st.file_uploader("1. Upload script.txt", type=["txt"])
 images = st.file_uploader("2. Upload numbered images ZIP", type=["zip"])
 voice_file = st.file_uploader("3. Optional human voiceover (MP3, WAV, M4A, or OGG)", type=["mp3", "wav", "m4a", "ogg"])
-voices = {
-    "Guy (US male)": "en-US-GuyNeural",
-    "Jenny (US female)": "en-US-JennyNeural",
-    "Aria (US female)": "en-US-AriaNeural",
-    "Ryan (UK male)": "en-GB-RyanNeural",
-}
-voice = st.selectbox("Edge TTS voice (used only if no narration file is uploaded)", list(voices))
 shorts = st.checkbox("Also create vertical Shorts cut")
 start = st.number_input("Shorts start seconds", min_value=0.0, value=0.0, disabled=not shorts)
 end = st.number_input("Shorts end seconds", min_value=1.0, value=30.0, disabled=not shorts)
@@ -44,7 +37,6 @@ if st.button("Render video", type="primary", disabled=not (script and images)):
                     with archive.open(info) as src, (project / "images" / p.name).open("wb") as dst:
                         shutil.copyfileobj(src, dst)
             cfg = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
-            cfg["voice"]["name"] = voices[voice]
             cp = Path(tmp) / "config.yaml"
             cp.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
             with st.spinner("Transcribing narration and rendering video..."):
