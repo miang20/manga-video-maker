@@ -15,26 +15,26 @@ def render_project(project,config_path=None):
   from src.sample_assets import ensure_sample_images
   ensure_sample_images(project)
  scenes=parse_script(project);v=cfg.get("video",{});c=cfg.get("captions",{});g=cfg.get("grain",{});m=cfg.get("music",{})
- w=int(v.get("width",1920));h=int(v.get("height",1080));fps=int(v.get("fps",24));pad=float(v.get("scene_padding_seconds",.3))
+ w=int(v.get("width",1920));h=int(v.get("height",1080));fps=int(v.get("fps",24));pad=float(v.get("scene_padding_seconds",.3));transition=float(v.get("crossfade_seconds",.15))
  work=project/"work";audio=project/"audio";ensure_dirs(work,audio,ROOT/"output")
  candidates=[ROOT/c.get("font","assets/fonts/Nunito-Bold.ttf"),Path(c.get("fallback_font","/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")),Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")]
  font=next((p for p in candidates if p.is_file()),None)
  if font is None:raise FileNotFoundError("No caption font found. Run python setup_fonts.py or install fonts-dejavu-core.")
- clips=[];audios=[];bounds=[];offset=0.0
- for scene in scenes:
+ clips=[];audios=[];bounds=[];scene_durations=[];offset=0.0
+ for scene_index,scene in enumerate(scenes):
   mp3=audio/f"scene-{scene.number:02d}.mp3";local=synthesize(scene.text,mp3,cfg);d=duration(mp3)
   if d<=0:raise RuntimeError(f"Voiceover duration is zero for paragraph {scene.number}.")
   bounds.extend({"text":b["text"],"start":offset+b["start"],"end":offset+b["end"]} for b in local)
   padded=audio/f"scene-{scene.number:02d}-padded.mp3"
   run(["ffmpeg","-y","-i",mp3,"-af",f"apad=pad_dur={pad}","-t",f"{d+pad:.4f}","-c:a","libmp3lame","-q:a","3",padded]);audios.append(padded)
-  clip=work/f"scene-{scene.number:02d}.mp4";sd=d+pad
-  if scene.kind=="card":text_card(scene.text,clip,sd,w,h,fps,font)
+  clip=work/f"scene-{scene.number:02d}.mp4";sd=d+pad;visual_sd=sd+(transition if scene_index<len(scenes)-1 else 0.0);scene_durations.append(sd)
+  if scene.kind=="card":text_card(scene.text,clip,visual_sd,w,h,fps,font)
   else:
    paths=scene.image_paths or []
    for image in paths:
     if not image.is_file():raise FileNotFoundError(f"Missing image for paragraph {scene.number}: {image}")
-   cross=min(float(v.get("crossfade_seconds",.15)),sd/(2*len(paths))) if len(paths)>1 else 0.0
-   per=(sd+cross*(len(paths)-1))/len(paths)
+   cross=min(transition,visual_sd/(2*len(paths))) if len(paths)>1 else 0.0
+   per=(visual_sd+cross*(len(paths)-1))/len(paths)
    parts=[]
    for j,image in enumerate(paths):
     part=work/f"scene-{scene.number:02d}-part-{j+1:02d}.mp4"
@@ -54,8 +54,19 @@ def render_project(project,config_path=None):
   clips.append(clip);offset+=sd
  al=work/"audio-list.txt";al.write_text("".join("file '"+p.resolve().as_posix()+"'\n" for p in audios),encoding="utf-8")
  voice=audio/"voiceover.mp3";run(["ffmpeg","-y","-f","concat","-safe","0","-i",al,"-c:a","libmp3lame","-q:a","3",voice])
- vl=work/"video-list.txt";vl.write_text("".join("file '"+p.resolve().as_posix()+"'\n" for p in clips),encoding="utf-8")
- joined=work/"joined.mp4";run(["ffmpeg","-y","-f","concat","-safe","0","-i",vl,"-c","copy",joined])
+ joined=work/"joined.mp4"
+ if len(clips)==1:
+  run(["ffmpeg","-y","-i",clips[0],"-c","copy",joined])
+ else:
+  cmd=["ffmpeg","-y"]
+  for clip in clips:cmd += ["-i",clip]
+  filters=[f"[{i}:v]settb=AVTB,setpts=PTS-STARTPTS,fps={fps},format=yuv420p[v{i}]" for i in range(len(clips))]
+  last="v0";cumulative=0.0
+  for i in range(1,len(clips)):
+   cumulative+=scene_durations[i-1];nxt=f"scene_x{i}"
+   filters.append(f"[{last}][v{i}]xfade=transition=fade:duration={transition:.4f}:offset={cumulative:.4f}[{nxt}]");last=nxt
+  cmd += ["-filter_complex",";".join(filters),"-map",f"[{last}]","-an","-c:v","libx264","-preset","ultrafast","-crf","22",joined]
+  run(cmd)
  caps=group_word_boundaries(bounds,int(c.get("words_per_chunk",3))) if c.get("enabled",True) else []
  ass=work/"captions.ass"
  if caps:write_ass(caps,ass,"Nunito",int(c.get("size",62)),int(c.get("outline",3)),h,float(c.get("bottom_fraction",.32)))
