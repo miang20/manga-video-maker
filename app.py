@@ -199,7 +199,7 @@ if st.session_state.get("script_with_hints"):
 
 with st.expander("Settings", expanded=True):
     caption_mode = st.radio("Caption mode", ["overlay", "card"], horizontal=True, index=0)
-    caption_size = st.slider("Caption size", 24, 72, 48, 2)
+    caption_size = st.slider("Caption size", 40, 100, 76, 2)
     music_on = st.toggle("Background music on", value=True)
     shorts_on = st.toggle("Create vertical Shorts", value=True)
     auto_match = st.toggle("Auto-match images to script", value=True)
@@ -227,7 +227,10 @@ def start_job(preview: bool):
             uploads.append(("voice" + PurePosixPath(voice.name).suffix.lower(), voice.getvalue()))
         if music and music_on:
             uploads.append(("music" + PurePosixPath(music.name).suffix.lower(), music.getvalue()))
-        st.session_state["active_run_started"] = time.time()
+        oversized = [(filename, len(data)) for filename, data in uploads if len(data) > MAX_FILE_BYTES]
+        if oversized:
+            filename, size = oversized[0]
+            raise ValueError(f"{filename} {size / (1024 * 1024):.1f} MB hai. Maximum 25 MB per file hai; compress karein.")
         st.session_state["active_project"] = name
         st.session_state["active_preview"] = preview
         with st.status("GitHub par project upload ho raha hai…", expanded=True) as status:
@@ -237,6 +240,7 @@ def start_job(preview: bool):
                 st.write(f"Uploaded: {filename}")
             settings = {"caption_mode": caption_mode, "caption_size": caption_size, "music_on": music_on,
                         "shorts_on": shorts_on, "auto_match": auto_match}
+            st.session_state["active_run_started"] = time.time()
             dispatch(token, name, preview, settings)
             status.update(label="Workflow dispatch request sent", state="complete")
         st.session_state["watch_run"] = True
