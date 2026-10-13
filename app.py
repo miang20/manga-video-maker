@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import calendar
 import io
 import re
 import time
@@ -52,11 +53,14 @@ def safe_project(value: str) -> str:
     return value
 
 def list_tree(token: str, project: str):
-    return api(token, "GET", f"/repos/{REPO}/git/trees/{BRANCH}?recursive=1").get("tree", [])
+    return api(token, "GET", f"/repos/{REPO}/git/trees/{BRANCH}?recursive=1")
 
 def delete_old_project_files(token: str, project: str):
     prefix = f"projects/{project}/"
-    for item in list_tree(token, project):
+    tree = list_tree(token, project)
+    if tree.get("truncated"):
+        raise RuntimeError("GitHub ki project file list incomplete hai; safety ke liye upload roka gaya.")
+    for item in tree.get("tree", []):
         path = item.get("path", "")
         if path.startswith(prefix) and item.get("type") == "blob":
             api(token, "DELETE", f"/repos/{REPO}/contents/{path}",
@@ -64,10 +68,27 @@ def delete_old_project_files(token: str, project: str):
 
 def upload_file(token: str, path: str, data: bytes, message: str):
     if len(data) > MAX_FILE_BYTES:
-        raise ValueError(f"{PurePosixPath(path).name} 25 MB se bara hai; file compress karein.")
-    body = {"message": message, "content": base64.b64encode(data).decode("ascii"), "branch": BRANCH}
-    api(token, "PUT", f"/repos/{REPO}/contents/{path}", json=body)
-
+        raise ValueError(f"{PurePosixPath(path).name} {len(data) / (1024 * 1024):.1f} MB hai; maximum 25 MB per file hai.")
+    endpoint = f"/repos/{REPO}/contents/{path}"
+    encoded = base64.b64encode(data).decode("ascii")
+    for attempt in range(2):
+        body = {"message": message, "content": encoded, "branch": BRANCH}
+        try:
+            api(token, "PUT", endpoint, json=body)
+            return
+        except RuntimeError:
+            if attempt:
+                raise
+            try:
+                current = api(token, "GET", endpoint + f"?ref={BRANCH}")
+                if current.get("type") == "file" and current.get("sha"):
+                    body["sha"] = current["sha"]
+                    api(token, "PUT", endpoint, json=body)
+                    return
+            except RuntimeError:
+                pass
+            time.sleep(1)
+    raise RuntimeError(f"{PurePosixPath(path).name} upload nahi hui; file dobara try karein.")
 def parse_paragraphs(script: str):
     blocks = re.split(r"\n\s*\n", script.strip())
     result = []
