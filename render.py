@@ -194,14 +194,26 @@ def render_project(project, config_path=None):
                   float(caption_cfg.get("pop_seconds", .08)))
 
     music = None
-    for scene in scenes:
-        if scene.music:
-            music = (ROOT / "assets" / "music" / scene.music).resolve()
-            if music.parent != (ROOT / "assets" / "music").resolve() or not music.is_file():
-                raise FileNotFoundError(f"MUSIC track not found in assets/music: {scene.music}")
-            break
-    if music is None and music_cfg.get("enabled", True):
-        music = next((p for p in sorted((ROOT / "assets" / "music").glob("*")) if p.suffix.lower() == ".mp3"), None)
+    if music_cfg.get("enabled", True):
+        project_music = next((p for p in sorted(project.glob("music.*"), key=lambda p: p.name.lower())
+                              if p.is_file() and p.suffix.lower() in {".mp3", ".wav", ".m4a", ".ogg"}), None)
+        if project_music is not None:
+            music = project_music
+            print(f"MUSIC_SOURCE=project; track={music.name}")
+        else:
+            for scene in scenes:
+                if scene.music:
+                    music = (ROOT / "assets" / "music" / scene.music).resolve()
+                    if music.parent != (ROOT / "assets" / "music").resolve() or not music.is_file():
+                        raise FileNotFoundError(f"MUSIC track not found in assets/music: {scene.music}")
+                    break
+            if music is None:
+                music = next((p for p in sorted((ROOT / "assets" / "music").glob("*"))
+                              if p.is_file() and p.suffix.lower() in {".mp3", ".wav", ".m4a", ".ogg"}), None)
+            if music is not None:
+                print(f"MUSIC_SOURCE=fallback; track={music.name}")
+    else:
+        print("MUSIC_SOURCE=disabled by render settings")
 
     output = ROOT / "output" / f"{project.name}.mp4"
     vf = f"fps={fps},setsar=1,format=yuv420p"
