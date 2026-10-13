@@ -15,25 +15,38 @@ on:
         description: "Optional Shorts end seconds"
         required: false
         type: string
+      test_voice:
+        description: "Generate a temporary test voice.wav with eSpeak to exercise voice-file alignment (acceptance test only)"
+        required: false
+        default: false
+        type: boolean
   push:
     paths:
       - "projects/**"
       - "src/**"
       - "render.py"
       - "config.yaml"
+      - "requirements.txt"
       - ".github/workflows/render.yml"
 permissions:
   contents: read
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
+      - name: Cache faster-whisper model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: faster-whisper-${{ runner.os }}-base.en-v1
+          restore-keys: |
+            faster-whisper-${{ runner.os }}-base.en-
       - name: Install FFmpeg and fonts
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core espeak-ng
       - name: Install dependencies
@@ -54,6 +67,22 @@ jobs:
           if not (p/"script.txt").is_file(): raise SystemExit(f"Missing script file: {p/'script.txt'}")
           print(f"Project ready: {p}")
           PY
+      - name: Generate temporary acceptance-test voice.wav
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
+        env:
+          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+        run: |
+          python - <<'PY'
+          import os, subprocess
+          from pathlib import Path
+          project = Path("projects") / os.environ["PROJECT_INPUT"]
+          text = " ".join(line.strip() for line in (project / "script.txt").read_text(encoding="utf-8").splitlines() if line.strip())
+          target = project / "voice.wav"
+          result = subprocess.run(["espeak-ng", "-v", "en-us", "-s", "145", "-w", str(target), text], capture_output=True, text=True)
+          if result.returncode or not target.is_file() or target.stat().st_size < 1000:
+              raise SystemExit(f"Could not generate acceptance voice.wav: {result.stderr}")
+          print(f"Generated temporary test audio: {target} ({target.stat().st_size} bytes)")
+          PY
       - name: Render landscape MP4
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
@@ -65,6 +94,21 @@ jobs:
           SHORTS_START: ${{ github.event.inputs.shorts_start }}
           SHORTS_END: ${{ github.event.inputs.shorts_end }}
         run: python render.py "projects/${PROJECT_INPUT}" --shorts-start "$SHORTS_START" --shorts-end "$SHORTS_END"
+      - name: Verify MP4 streams and duration
+        run: |
+          python - <<'PY'
+          import json, subprocess
+          from pathlib import Path
+          videos = list(Path("output").glob("*.mp4"))
+          if not videos: raise SystemExit("No MP4 output found.")
+          for video in videos:
+              probe = json.loads(subprocess.check_output(["ffprobe","-v","error","-show_streams","-show_format","-of","json",str(video)]))
+              streams = probe.get("streams", [])
+              if not any(s.get("codec_type") == "video" for s in streams): raise SystemExit(f"{video} has no video stream")
+              audio = [s for s in streams if s.get("codec_type") == "audio"]
+              if not audio: raise SystemExit(f"{video} has no audio stream")
+              print(f"VERIFIED {video}: {probe['format'].get('duration')} sec, audio={audio[0].get('codec_name')}, sample_rate={audio[0].get('sample_rate')}")
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: manga-video-${{ github.event.inputs.project || 'video-001' }}
