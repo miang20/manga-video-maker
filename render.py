@@ -32,7 +32,7 @@ def _concat_audio(files, output):
     listing = output.with_suffix(".list.txt")
     listing.write_text("".join("file '" + p.resolve().as_posix().replace("'", "'\\''") + "'\n" for p in files), encoding="utf-8")
     try:
-        run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listing, "-c:a", "pcm_s16le", "-ar", "44100", output])
+        run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listing, "-c:a", "pcm_s16le", "-ar", str(sample_rate), output])
     finally:
         listing.unlink(missing_ok=True)
 
@@ -53,6 +53,11 @@ def render_project(project, config_path=None):
     caption_cfg = cfg.get("captions", {})
     grain_cfg = cfg.get("grain", {})
     music_cfg = cfg.get("music", {})
+    audio_cfg = cfg.get("audio", {})
+    sample_rate = int(audio_cfg.get("sample_rate", 44100))
+    target_lufs = float(audio_cfg.get("target_lufs", -16))
+    true_peak_db = float(audio_cfg.get("true_peak_db", -1.5))
+    loudness_range = float(audio_cfg.get("lra", 11))
     transcription_cfg = cfg.get("transcription", {})
     width = int(video_cfg.get("width", 1920))
     height = int(video_cfg.get("height", 1080))
@@ -211,7 +216,7 @@ def render_project(project, config_path=None):
         threshold = float(music_cfg.get("ducking_threshold", .03))
         ratio = float(music_cfg.get("ducking_ratio", 8))
         fade = float(music_cfg.get("fade_seconds", 1.0))
-        cmd += [f"[1:a]aresample=44100,volume=1[voice];[2:a]aresample=44100,volume={music_linear:.6f},afade=t=in:st=0:d={fade},asetpts=PTS-STARTPTS[music];[music][voice]sidechaincompress=threshold={threshold}:ratio={ratio}:attack=20:release=350[ducked];[voice][ducked]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100[aout]"]
+        cmd += [f"[1:a]aresample={sample_rate},volume=1[voice];[2:a]aresample={sample_rate},volume={music_linear:.6f},afade=t=in:st=0:d={fade},asetpts=PTS-STARTPTS[music];[music][voice]sidechaincompress=threshold={threshold}:ratio={ratio}:attack=20:release=350[ducked];[voice][ducked]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"]
     else:
         cmd += ["[1:a]aresample=44100,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=44100[aout]"]
     cmd += ["-map", "0:v:0", "-map", "[aout]", "-vf", vf, "-r", str(fps),
@@ -225,8 +230,8 @@ def render_project(project, config_path=None):
     audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
     if not audio_streams:
         raise RuntimeError("Rendered MP4 has no audio stream.")
-    if int(audio_streams[0].get("sample_rate", 0)) != 44100:
-        raise RuntimeError(f"Expected 44100 Hz final audio, got {audio_streams[0].get('sample_rate')}.")
+    if int(audio_streams[0].get("sample_rate", 0)) != sample_rate:
+        raise RuntimeError(f"Expected {sample_rate} Hz final audio, got {audio_streams[0].get('sample_rate')}.")
     print(f"RENDER_OK={output}\nDURATION_SECONDS={duration(output):.2f}\nCAPTION_CHUNKS={len(caption_chunks)}\nVOICE_SOURCE={'uploaded' if supplied_voice else 'edge-tts'}")
     return output
 
