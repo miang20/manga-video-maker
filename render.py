@@ -131,7 +131,7 @@ def render_project(project, config_path=None):
             if len(images) == 1:
                 render_still(images[0], clip, visual_duration, width, height, fps, zoom,
                              "in" if scene_index % 2 == 0 else "out",
-                             bool(grain_cfg.get("enabled", True)), grain_strength, max_pan)
+                             bool(grain_cfg.get("enabled", True)), grain_strength, max_pan, float(video_cfg.get("zoom_start", 1.0)))
             else:
                 per_image = visual_duration / len(images)
                 parts = []
