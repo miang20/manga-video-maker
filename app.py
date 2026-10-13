@@ -136,12 +136,13 @@ def download_artifact(token: str, run_id: int):
 
 def show_artifacts(archive: zipfile.ZipFile, project: str):
     names = archive.namelist()
-    wanted = [f"{project}.mp4", f"{project}-shorts.mp4", f"{project}-thumbnail.png",
-              f"{project}-match-preview.png", f"{project}.srt", "notes.txt", "match-table.txt", "first-error.txt"]
-    lookup = {PurePosixPath(n).name: n for n in names if not n.endswith("/")}
-    thumbnail_member = next((n for n in names if PurePosixPath(n).name.startswith(project + "-thumbnail.")), None)
-    if thumbnail_member and f"{project}-thumbnail.png" not in lookup:
-        lookup[f"{project}-thumbnail.png"] = thumbnail_member
+    files = [n for n in names if not n.endswith("/")]
+    thumbnail_member = next((n for n in files if PurePosixPath(n).name.startswith(project + "-thumbnail.")), None)
+    wanted = [f"{project}.mp4", f"{project}-shorts.mp4"]
+    if thumbnail_member:
+        wanted.append(PurePosixPath(thumbnail_member).name)
+    wanted.extend([f"{project}-match-preview.png", f"{project}.srt", "notes.txt", "match-table.txt", "first-error.txt"])
+    lookup = {PurePosixPath(n).name: n for n in files}
     for name in wanted:
         member = lookup.get(name)
         if not member:
@@ -150,8 +151,8 @@ def show_artifacts(archive: zipfile.ZipFile, project: str):
         if name.lower().endswith(".png") and "match-preview" in name:
             st.subheader("Image order preview")
             st.image(data, use_container_width=True)
-        if name.lower().endswith((".mp4", ".png", ".srt", ".txt")):
-            mime = "video/mp4" if name.endswith(".mp4") else "image/png" if name.endswith(".png") else "text/plain"
+        if name.lower().endswith((".mp4", ".png", ".jpg", ".jpeg", ".srt", ".txt")):
+            mime = "video/mp4" if name.endswith(".mp4") else "image/png" if name.endswith(".png") else "image/jpeg" if name.endswith((".jpg", ".jpeg")) else "text/plain"
             st.download_button(f"Download {name}", data, file_name=name, mime=mime, key=f"dl-{member}")
         if "match-table" in name or name == "notes.txt":
             st.subheader("Match table / notes")
@@ -159,7 +160,8 @@ def show_artifacts(archive: zipfile.ZipFile, project: str):
         if name == "first-error.txt":
             st.error("Workflow error (simple details)")
             st.code(data.decode("utf-8", errors="replace")[:6000])
-
+    if not any(PurePosixPath(n).name == "first-error.txt" for n in files):
+        st.caption("Artifact mein first-error.txt nahi mili.")
 try:
     token = st.secrets["GITHUB_TOKEN"]
 except Exception:
