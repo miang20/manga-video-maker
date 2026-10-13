@@ -85,7 +85,7 @@ def upload_file(token: str, path: str, data: bytes, message: str):
         try:
             api(token, "PUT", endpoint, json=body)
             return
-        except RuntimeError:
+        except (RuntimeError, requests.RequestException):
             if attempt:
                 raise
             try:
