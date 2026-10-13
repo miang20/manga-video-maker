@@ -70,7 +70,7 @@ jobs:
           print(f"Project ready: {p}")
           PY
       - name: Generate temporary acceptance-test voice.wav
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_voice }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
