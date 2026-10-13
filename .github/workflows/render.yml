@@ -151,7 +151,7 @@ jobs:
         run: |
           test -s output/video-001.mp4
           test -s output/video-001.srt
-          test -s output/video-001-notes.txt
+          test -s output/notes.txt
           test -s output/video-001-thumbnail.png
           python - <<'PY'
           import json, subprocess
