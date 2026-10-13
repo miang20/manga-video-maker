@@ -10,7 +10,8 @@ sys.path.insert(0, str(ROOT))
 
 from src.alignment import align_paragraphs
 from src.parser import parse_script
-from src.voice import find_voice_file, synthesize, transcribe_word_timestamps
+from src.voice import find_voice_file, prepare_voice, synthesize, transcribe_word_timestamps
+from src.images import prepare_images
 from src.captions import group_word_boundaries, write_ass
 from src.effects import render_still, text_card
 from src.utils import load_config, ensure_dirs, require_binary, run, ffprobe
@@ -25,7 +26,7 @@ def _normalize_words(words, offset=0.0):
     return [{"text": str(w["text"]), "start": float(w["start"]) + offset, "end": float(w["end"]) + offset} for w in words]
 
 
-def _concat_audio(files, output):
+def _concat_audio(files, output, sample_rate=44100):
     if len(files) == 1:
         shutil.copy2(files[0], output)
         return
@@ -78,13 +79,20 @@ def render_project(project, config_path=None):
     if font is None:
         raise FileNotFoundError("No caption font found. Run python setup_fonts.py or install fonts-dejavu-core.")
 
+    # Normalize supplied image inputs once; preserve originals and keep the parser's scene mapping.
+    prepared_images = prepare_images(project, [scene for scene in scenes if scene.kind == "image"])
+    image_iter = iter(prepared_images)
+    for scene in scenes:
+        if scene.kind == "image":
+            scene.image_paths = [next(image_iter)]
+
     supplied_voice = find_voice_file(project)
     bounds = []
     scene_intervals = []
     voice_path = audio_dir / "voiceover.wav"
     if supplied_voice:
         print(f"[VOICE] Using uploaded narration file: {supplied_voice.name}; TTS is disabled for this render.")
-        shutil.copy2(supplied_voice, voice_path)
+        prepare_voice(supplied_voice, voice_path, cfg)
         words, transcribed_duration = transcribe_word_timestamps(voice_path, transcription_cfg)
         paragraph_texts = [scene.text for scene in scenes]
         aligned = align_paragraphs(paragraph_texts, words, transcribed_duration)
@@ -106,7 +114,7 @@ def render_project(project, config_path=None):
             bounds.extend(_normalize_words(local, cursor))
             tts_files.append(segment_path)
             cursor += segment_duration
-        _concat_audio(tts_files, voice_path)
+        _concat_audio(tts_files, voice_path, sample_rate)
         voice_duration = duration(voice_path)
 
     clips = []
@@ -223,6 +231,29 @@ def render_project(project, config_path=None):
             "-crf", str(video_cfg.get("crf", 20)), "-c:a", "aac", "-b:a", "192k",
             "-ar", str(sample_rate), "-shortest", "-movflags", "+faststart", output]
     run(cmd)
+    # Always publish companion assets alongside the MP4 so Actions can archive them.
+    def srt_time(seconds):
+        ms = max(0, int(round(float(seconds) * 1000)))
+        hours, ms = divmod(ms, 3600000)
+        minutes, ms = divmod(ms, 60000)
+        seconds_i, ms = divmod(ms, 1000)
+        return f"{hours:02d}:{minutes:02d}:{seconds_i:02d},{ms:03d}"
+    srt_path = ROOT / "output" / f"{project.name}.srt"
+    with srt_path.open("w", encoding="utf-8") as handle:
+        for i, chunk in enumerate(caption_chunks, 1):
+            handle.write(f"{i}\\n{srt_time(chunk['start'])} --> {srt_time(chunk['end'])}\\n{chunk['text']}\\n\\n")
+    notes_path = ROOT / "output" / f"{project.name}-notes.txt"
+    notes = [f"Project: {project.name}", f"Duration seconds: {duration(output):.2f}",
+             f"Voice source: {'uploaded' if supplied_voice else 'edge-tts'}",
+             f"Audio sample rate: {sample_rate} Hz", f"Target loudness: {target_lufs} LUFS",
+             f"Caption mode: {caption_mode}", f"Caption chunks: {len(caption_chunks)}", "Paragraph timings:"]
+    notes.extend(f"{i}. {start:.2f}s - {end:.2f}s: {scene.text}" for i, (scene, (start, end)) in enumerate(zip(scenes, scene_intervals), 1))
+    notes_path.write_text("\\n".join(notes) + "\\n", encoding="utf-8")
+    thumbnail_dir = project / "thumbnail"
+    if thumbnail_dir.is_dir():
+        thumb = next((p for p in sorted(thumbnail_dir.iterdir()) if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}), None)
+        if thumb:
+            shutil.copy2(thumb, ROOT / "output" / f"{project.name}-thumbnail{thumb.suffix.lower()}")
     streams = ffprobe(output).get("streams", [])
     if not any(s.get("codec_type") == "video" for s in streams):
         raise RuntimeError("Rendered MP4 has no video stream.")
