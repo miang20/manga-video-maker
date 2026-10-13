@@ -8,7 +8,7 @@ def _tokens(text: str) -> list[str]:
 def align_paragraphs(paragraphs: list[str], words: list[dict], audio_duration: float) -> list[dict]:
     """Fuzzy-align script paragraphs to ASR words, falling back to cumulative word counts.
 
-Acceptance-test trigger: Run voice-file acceptance test."""
+Acceptance-test trigger: Run voice-file acceptance test (current-main verification)."""
     if not paragraphs:
         return []
     if not words:
