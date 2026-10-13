@@ -3,6 +3,7 @@ from src.alignment import align_paragraphs
 
 
 class AlignmentTests(unittest.TestCase):
+    # This test file also triggers one temporary CI narration render when committed with the acceptance message.
     def test_fuzzy_word_alignment_preserves_paragraph_order(self):
         paragraphs = ["A lone warrior hears a sound", "The shadow moves across the floor"]
         words = [
