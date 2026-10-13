@@ -30,7 +30,7 @@ Set an expiration and revoke the token if it is exposed. Streamlit secrets are s
 - `script.txt`: paragraphs separated by a blank line. Optional `IMG: description` hint lines are not spoken or captioned.
 - Voice: `voice.mp3`, `voice.wav`, `voice.m4a`, or `voice.ogg`.
 - `images/`: PNG/JPG/JPEG/WebP files. With `auto_match: true`, images are matched to scenes using CPU CLIP embeddings. Manual matching uses `match.yaml`.
-- Optional music can be uploaded with a project; the existing workflow's music handling is currently based on `assets/music/`, so per-project music routing must be connected before expecting this upload to affect the mix.
+- Optional music can be uploaded with a project; the renderer prefers `projects/<name>/music.*` when enabled, then falls back to `assets/music/`.
 
 ## Outputs
 
