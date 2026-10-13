@@ -6,7 +6,9 @@ def _tokens(text: str) -> list[str]:
     return [t.lower().replace("’", "'") for t in re.findall(r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*", text)]
 
 def align_paragraphs(paragraphs: list[str], words: list[dict], audio_duration: float) -> list[dict]:
-    """Fuzzy-align script paragraphs to ASR words, falling back to cumulative word counts."""
+    """Fuzzy-align script paragraphs to ASR words, falling back to cumulative word counts.
+
+Acceptance-test trigger: Run voice-file acceptance test."""
     if not paragraphs:
         return []
     if not words:
