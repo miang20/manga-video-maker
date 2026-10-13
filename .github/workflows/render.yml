@@ -20,14 +20,6 @@ on:
         required: false
         default: false
         type: boolean
-  push:
-    paths:
-      - "projects/**"
-      - "src/**"
-      - "render.py"
-      - "config.yaml"
-      - "requirements.txt"
-      - ".github/workflows/render.yml"
 permissions:
   contents: read
 jobs:
@@ -145,6 +137,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: manga-video-${{ github.event.inputs.project || 'video-001' }}
-          path: output/*.mp4
+          path: output/*
           if-no-files-found: error
           retention-days: 14
