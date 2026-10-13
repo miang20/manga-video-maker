@@ -109,11 +109,21 @@ def dispatch(token: str, project: str, preview: bool, settings: dict):
                     "auto_match": "true" if settings["auto_match"] else "false"}})
 
 def run_for_project(token: str, project: str, started: float):
-    runs = api(token, "GET", f"/repos/{REPO}/actions/workflows/render.yml/runs?branch={BRANCH}&per_page=10").get("workflow_runs", [])
-    candidates = [r for r in runs if r.get("created_at") and r.get("event") == "workflow_dispatch"
-                  and r.get("created_at") >= time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started - 10))]
-    return candidates[0] if candidates else None
-
+    runs = api(token, "GET", f"/repos/{REPO}/actions/workflows/render.yml/runs?branch={BRANCH}&event=workflow_dispatch&per_page=30").get("workflow_runs", [])
+    cutoff = started - 3
+    candidates = []
+    for run in runs:
+        created = run.get("created_at")
+        if not created:
+            continue
+        try:
+            created_epoch = calendar.timegm(time.strptime(created, "%Y-%m-%dT%H:%M:%SZ"))
+        except ValueError:
+            continue
+        title = str(run.get("display_title") or run.get("name") or "")
+        if created_epoch >= cutoff and project in title:
+            candidates.append(run)
+    return max(candidates, key=lambda r: r.get("created_at", "")) if candidates else None
 def download_artifact(token: str, run_id: int):
     arts = api(token, "GET", f"/repos/{REPO}/actions/runs/{run_id}/artifacts").get("artifacts", [])
     artifact = next((a for a in arts if a.get("name", "").startswith("manga-video-") and not a.get("expired")), None)
