@@ -139,6 +139,9 @@ def show_artifacts(archive: zipfile.ZipFile, project: str):
     wanted = [f"{project}.mp4", f"{project}-shorts.mp4", f"{project}-thumbnail.png",
               f"{project}-match-preview.png", f"{project}.srt", "notes.txt", "match-table.txt", "first-error.txt"]
     lookup = {PurePosixPath(n).name: n for n in names if not n.endswith("/")}
+    thumbnail_member = next((n for n in names if PurePosixPath(n).name.startswith(project + "-thumbnail.")), None)
+    if thumbnail_member and f"{project}-thumbnail.png" not in lookup:
+        lookup[f"{project}-thumbnail.png"] = thumbnail_member
     for name in wanted:
         member = lookup.get(name)
         if not member:
