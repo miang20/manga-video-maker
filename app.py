@@ -15,7 +15,7 @@ API = "https://api.github.com"
 BRANCH = "main"
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 VOICE_EXTS = {".mp3", ".wav", ".m4a", ".ogg"}
-MAX_FILE_BYTES = 90 * 1024 * 1024
+MAX_FILE_BYTES = 25 * 1024 * 1024
 
 st.set_page_config(page_title="Manga Video Maker", page_icon="🎬", layout="centered")
 st.markdown("""
@@ -64,7 +64,7 @@ def delete_old_project_files(token: str, project: str):
 
 def upload_file(token: str, path: str, data: bytes, message: str):
     if len(data) > MAX_FILE_BYTES:
-        raise ValueError(f"{PurePosixPath(path).name} 90 MB se bara hai; isay chhota karein.")
+        raise ValueError(f"{PurePosixPath(path).name} 25 MB se bara hai; file compress karein.")
     body = {"message": message, "content": base64.b64encode(data).decode("ascii"), "branch": BRANCH}
     api(token, "PUT", f"/repos/{REPO}/contents/{path}", json=body)
 
@@ -173,7 +173,7 @@ with st.expander("Settings", expanded=True):
     shorts_on = st.toggle("Create vertical Shorts", value=True)
     auto_match = st.toggle("Auto-match images to script", value=True)
 
-st.info("Note: large uploads are sent to GitHub Contents API. Per-file app limit is 90 MB; GitHub's API also has practical limits.")
+st.info("Note: large uploads are sent to GitHub Contents API. Per-file app limit is 25 MB; GitHub's API also has practical limits.")
 def start_job(preview: bool):
     if not token:
         st.error("GITHUB_TOKEN missing hai. Secrets configure karein.")
