@@ -1,0 +1,29 @@
+voice:
+  name: en-US-GuyNeural
+  rate: "+0%"
+  pitch: "+0Hz"
+  retries: 3
+video:
+  width: 1920
+  height: 1080
+  fps: 24
+  crf: 20
+  preset: medium
+  scene_padding_seconds: 0.3
+  crossfade_seconds: 0.15
+  zoom: 1.08
+captions:
+  enabled: true
+  words_per_chunk: 3
+  font: assets/fonts/Nunito-Bold.ttf
+  fallback_font: /usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf
+  size: 62
+  outline: 3
+  bottom_fraction: 0.32
+music:
+  enabled: true
+  volume: 0.055
+  fade_seconds: 1.0
+grain:
+  enabled: true
+  opacity: 0.10

@@ -1,0 +1,73 @@
+name: Render Manga Video
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Project folder under projects/, e.g. video-001"
+        required: true
+        default: video-001
+        type: string
+      shorts_start:
+        description: "Optional Shorts start seconds"
+        required: false
+        type: string
+      shorts_end:
+        description: "Optional Shorts end seconds"
+        required: false
+        type: string
+  push:
+    paths:
+      - "projects/**"
+      - "src/**"
+      - "render.py"
+      - "config.yaml"
+      - ".github/workflows/render.yml"
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install FFmpeg and fonts
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Install optional Nunito font
+        run: python setup_fonts.py
+      - name: Validate project
+        env:
+          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          name=os.environ["PROJECT_INPUT"].strip()
+          if not name or "/" in name or chr(92) in name or name in {".",".."}:
+              raise SystemExit("Project must be one folder name such as video-001.")
+          p=Path("projects")/name
+          if not (p/"script.txt").is_file(): raise SystemExit(f"Missing script file: {p/'script.txt'}")
+          print(f"Project ready: {p}")
+          PY
+      - name: Render landscape MP4
+        env:
+          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+        run: python render.py "projects/${PROJECT_INPUT}"
+      - name: Render optional Shorts MP4
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.shorts_start != '' && github.event.inputs.shorts_end != '' }}
+        env:
+          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+          SHORTS_START: ${{ github.event.inputs.shorts_start }}
+          SHORTS_END: ${{ github.event.inputs.shorts_end }}
+        run: python render.py "projects/${PROJECT_INPUT}" --shorts-start "$SHORTS_START" --shorts-end "$SHORTS_END"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manga-video-${{ github.event.inputs.project || 'video-001' }}
+          path: output/*.mp4
+          if-no-files-found: error
+          retention-days: 14
