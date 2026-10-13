@@ -90,12 +90,25 @@ jobs:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: python render.py "projects/${PROJECT_INPUT}"
       - name: Render optional Shorts MP4
-        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.shorts_start != '' && github.event.inputs.shorts_end != '' }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.shorts_start != '' && github.event.inputs.shorts_end != '') || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
-          SHORTS_START: ${{ github.event.inputs.shorts_start }}
-          SHORTS_END: ${{ github.event.inputs.shorts_end }}
-        run: python render.py "projects/${PROJECT_INPUT}" --shorts-start "$SHORTS_START" --shorts-end "$SHORTS_END"
+          SHORTS_START: ${{ github.event.inputs.shorts_start || '0' }}
+          SHORTS_END: ${{ github.event.inputs.shorts_end || '10' }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from src.shorts import make_shorts
+          from src.utils import load_config
+          cfg = load_config()
+          project = os.environ["PROJECT_INPUT"]
+          source = Path("output") / (project + ".mp4")
+          target = Path("output") / (project + "-shorts.mp4")
+          make_shorts(source, target, float(os.environ["SHORTS_START"]), float(os.environ["SHORTS_END"]),
+                      int(cfg.get("video", {}).get("fps", 24)), int(cfg.get("video", {}).get("crf", 20)))
+          print("SHORTS_OK=" + str(target))
+          PY
       - name: Verify MP4 streams and duration
         run: |
           python - <<'PY'
