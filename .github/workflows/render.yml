@@ -32,7 +32,7 @@ on:
       caption_size:
         description: "Caption size requested by the front end"
         required: false
-        default: "48"
+        default: "76"
         type: string
       music_on:
         description: "Music toggle requested by the front end"
@@ -245,13 +245,13 @@ jobs:
           if mode not in {'overlay', 'card'}:
               raise SystemExit('caption_mode must be overlay or card.')
           try:
-              size = max(24, min(72, int(os.environ.get('CAPTION_SIZE_INPUT', '48'))))
+              size = max(40, min(100, int(os.environ.get('CAPTION_SIZE_INPUT', '76'))))
           except ValueError:
-              raise SystemExit('caption_size must be a number from 24 to 72.')
+              raise SystemExit('caption_size must be a number from 40 to 100.')
           config['auto_match'] = enabled('AUTO_MATCH_INPUT')
           config.setdefault('captions', {})['caption_mode'] = mode
           config['captions']['size'] = size
-          config['captions']['card_size'] = size
+          config['captions']['card_size'] = max(48, int(round(size * 88 / 76)))
           config.setdefault('music', {})['enabled'] = enabled('MUSIC_ON_INPUT')
           Path('/tmp/config-render.yaml').write_text(yaml.safe_dump(config, sort_keys=False), encoding='utf-8')
           Path('/tmp/shorts-enabled.txt').write_text('true' if enabled('SHORTS_ON_INPUT') else 'false', encoding='utf-8')
@@ -290,6 +290,9 @@ jobs:
           if voice is None:
               raise SystemExit("No voice file found for caption-card render.")
           shutil.copy2(voice, target / voice.name)
+          for music in source.glob('music.*'):
+              if music.is_file() and music.suffix.lower() in {'.mp3', '.wav', '.m4a', '.ogg'}:
+                  shutil.copy2(music, target / music.name)
           config = yaml.safe_load(Path("/tmp/config-render.yaml").read_text(encoding="utf-8")) if Path("/tmp/config-render.yaml").is_file() else yaml.safe_load(Path("config.yaml").read_text(encoding="utf-8"))
           config["captions"]["caption_mode"] = "card"
           Path("/tmp/config-card.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
