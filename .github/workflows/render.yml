@@ -85,6 +85,7 @@ jobs:
         if: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_voice) || (github.event_name == 'push' && github.event.head_commit.message == 'Run voice-file acceptance test') }}
         run: |
           mkdir -p assets/music projects/video-001/thumbnail
+          python -c "from pathlib import Path; from src.sample_assets import ensure_sample_images; ensure_sample_images(Path('projects/video-001'))"
           ffmpeg -y -f lavfi -i "anoisesrc=color=pink:amplitude=0.01:sample_rate=44100:duration=60" -codec:a libmp3lame -b:a 96k assets/music/000-acceptance-pad.mp3
           cp projects/video-001/images/01.png projects/video-001/thumbnail/acceptance-thumbnail.png
           ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate -of default=nw=1 assets/music/000-acceptance-pad.mp3
