@@ -35,7 +35,8 @@ def api_headers(token: str) -> dict:
 
 def api(token: str, method: str, path: str, **kwargs):
     last_error = None
-    for attempt in range(2):
+    attempts = 2 if method.upper() in {"GET", "DELETE"} else 1
+    for attempt in range(attempts):
         try:
             response = requests.request(method, API + path, headers=api_headers(token), timeout=90, **kwargs)
             if response.ok:
@@ -53,7 +54,7 @@ def api(token: str, method: str, path: str, **kwargs):
             last_error = exc
         if attempt == 0:
             time.sleep(1.5)
-    raise RuntimeError(f"GitHub request failed after one retry: {last_error}") from last_error
+    raise RuntimeError(f"GitHub request failed: {last_error}") from last_error
 def safe_project(value: str) -> str:
     value = value.strip()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,70}", value) or value in {".", ".."}:
