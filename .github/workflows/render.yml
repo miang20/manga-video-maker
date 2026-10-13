@@ -227,7 +227,7 @@ jobs:
           OUTCOME_INSTALL_FONT: ${{ steps.install_font.outcome }}
           OUTCOME_SYNTAX_VALIDATION: ${{ steps.syntax_validation.outcome }}
           OUTCOME_ALIGNMENT_TESTS: ${{ steps.alignment_tests.outcome }}
-          OUTCOME_MATCHER_SELF_TEST: ${{ steps.matcher_self_test.outcome }}
+          OUTCOME_MATCHER_SELF_TEST: ${{ steps.matcher_self_test.conclusion }}
           OUTCOME_ENSURE_SAMPLE: ${{ steps.ensure_sample.outcome }}
           OUTCOME_RENDER_LANDSCAPE: ${{ steps.render_landscape.outcome }}
           OUTCOME_RENDER_CARD: ${{ steps.render_card.outcome }}
