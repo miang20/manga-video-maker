@@ -42,6 +42,11 @@ music:
   fade_seconds: 1.0
   ducking_threshold: 0.03
   ducking_ratio: 8
+audio:
+  target_lufs: -16
+  true_peak_db: -1.5
+  lra: 11
+  sample_rate: 44100
 grain:
   enabled: true
   strength: 0.06
