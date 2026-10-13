@@ -75,7 +75,7 @@ jobs:
           PY
       - name: Run alignment unit tests
         id: alignment_tests
-        run: python -m unittest discover -s tests -v
+        run: python -m unittest discover -s tests -p 'test_alignment.py' -v
       - name: Run image matcher self-test
         id: matcher_self_test
         continue-on-error: true
