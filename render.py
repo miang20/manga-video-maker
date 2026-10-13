@@ -242,14 +242,14 @@ def render_project(project, config_path=None):
     srt_path = ROOT / "output" / f"{project.name}.srt"
     with srt_path.open("w", encoding="utf-8") as handle:
         for i, chunk in enumerate(caption_chunks, 1):
-            handle.write(f"{i}\\n{srt_time(chunk['start'])} --> {srt_time(chunk['end'])}\\n{chunk['text']}\\n\\n")
-    notes_path = ROOT / "output" / f"{project.name}-notes.txt"
+            handle.write(f"{i}\n{srt_time(chunk['start'])} --> {srt_time(chunk['end'])}\n{chunk['text']}\n\n")
+    notes_path = ROOT / "output" / "notes.txt"
     notes = [f"Project: {project.name}", f"Duration seconds: {duration(output):.2f}",
              f"Voice source: {'uploaded' if supplied_voice else 'edge-tts'}",
              f"Audio sample rate: {sample_rate} Hz", f"Target loudness: {target_lufs} LUFS",
              f"Caption mode: {caption_mode}", f"Caption chunks: {len(caption_chunks)}", "Paragraph timings:"]
     notes.extend(f"{i}. {start:.2f}s - {end:.2f}s: {scene.text}" for i, (scene, (start, end)) in enumerate(zip(scenes, scene_intervals), 1))
-    notes_path.write_text("\\n".join(notes) + "\\n", encoding="utf-8")
+    notes_path.write_text("\n".join(notes) + "\n", encoding="utf-8")
     thumbnail_dir = project / "thumbnail"
     if thumbnail_dir.is_dir():
         thumb = next((p for p in sorted(thumbnail_dir.iterdir()) if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}), None)
