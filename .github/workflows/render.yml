@@ -32,6 +32,13 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Cache CLIP model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: clip-vit-b-32-${{ runner.os }}-v1
+          restore-keys: |
+            clip-vit-b-32-${{ runner.os }}-
       - name: Cache faster-whisper model
         uses: actions/cache@v4
         with:
@@ -60,6 +67,8 @@ jobs:
           PY
       - name: Run alignment unit tests
         run: python -m unittest discover -s tests -v
+      - name: Run image matcher self-test
+        run: python -m unittest tests.test_matcher -v
       - name: Ensure sample project and offline inputs
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}

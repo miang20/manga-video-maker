@@ -244,6 +244,17 @@ def render_project(project, config_path=None):
              f"Caption mode: {caption_mode}", f"Caption chunks: {len(caption_chunks)}", "Paragraph timings:"]
     notes.extend(f"{i}. {start:.2f}s - {end:.2f}s: {scene.text}" for i, (scene, (start, end)) in enumerate(zip(scenes, scene_intervals), 1))
     notes_path.write_text("\n".join(notes) + "\n", encoding="utf-8")
+    if match_rows is not None:
+        with notes_path.open("a", encoding="utf-8") as handle:
+            handle.write("\\n\\nIMAGE SCENE MATCH TABLE\\n")
+            handle.write("Scene | first 6 words | matched image | similarity score | confidence\\n")
+            handle.write("--- | --- | --- | --- | ---\\n")
+            for row in match_rows:
+                words = " ".join(row["text"].split()[:6]).replace("|", "/")
+                names = ", ".join(path.name for path in row["images"]) if row["images"] else "(none)"
+                score = f"{row['score']:.3f}" if isinstance(row["score"], (int, float)) else "-"
+                handle.write(f"{row['scene']} | {words} | {names} | {score} | {row['confidence']}\\n")
+
     thumbnail_dir = project / "thumbnail"
     if thumbnail_dir.is_dir():
         thumb = next((p for p in sorted(thumbnail_dir.iterdir()) if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}), None)

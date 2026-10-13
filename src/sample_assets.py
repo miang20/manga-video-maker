@@ -84,7 +84,7 @@ def ensure_test_voice(project: Path) -> Path:
     script = project / "script.txt"
     if not script.is_file():
         raise FileNotFoundError(f"Missing script file for offline narration: {script}")
-    text = " ".join(line.strip() for line in script.read_text(encoding="utf-8-sig").splitlines() if line.strip())
+    text = " ".join(line.strip() for line in script.read_text(encoding="utf-8-sig").splitlines() if line.strip() and not line.strip().upper().startswith("IMG:"))
     if not text:
         raise ValueError(f"Script is empty: {script}")
     if not shutil.which("espeak-ng") or not shutil.which("ffmpeg"):
