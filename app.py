@@ -34,18 +34,26 @@ def api_headers(token: str) -> dict:
             "X-GitHub-Api-Version": "2022-11-28"}
 
 def api(token: str, method: str, path: str, **kwargs):
-    response = requests.request(method, API + path, headers=api_headers(token), timeout=90, **kwargs)
-    if not response.ok:
-        detail = ""
+    last_error = None
+    for attempt in range(2):
         try:
-            detail = response.json().get("message", "")
-        except Exception:
-            pass
-        raise RuntimeError(f"GitHub API error ({response.status_code}): {detail or 'request failed'}")
-    if response.status_code == 204 or not response.content:
-        return {}
-    return response.json()
-
+            response = requests.request(method, API + path, headers=api_headers(token), timeout=90, **kwargs)
+            if response.ok:
+                if response.status_code == 204 or not response.content:
+                    return {}
+                return response.json()
+            try:
+                detail = response.json().get("message", "")
+            except Exception:
+                detail = ""
+            last_error = RuntimeError(f"GitHub API error ({response.status_code}): {detail or 'request failed'}")
+            if response.status_code < 500 and response.status_code != 429:
+                raise last_error
+        except requests.RequestException as exc:
+            last_error = exc
+        if attempt == 0:
+            time.sleep(1.5)
+    raise RuntimeError(f"GitHub request failed after one retry: {last_error}") from last_error
 def safe_project(value: str) -> str:
     value = value.strip()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,70}", value) or value in {".", ".."}:
