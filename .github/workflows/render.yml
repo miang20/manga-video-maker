@@ -17,7 +17,7 @@ on:
         required: false
         type: string
       preview_only:
-        description: "Only prepare and upload the strict filename-order image preview"
+        description: "Only prepare and upload the CLIP image-match preview"
         required: false
         default: false
         type: boolean
@@ -44,6 +44,11 @@ on:
         required: false
         default: true
         type: boolean
+      auto_match:
+        description: "Auto image matching toggle requested by the front end"
+        required: false
+        default: true
+        type: boolean
       test_voice:
         description: "Compatibility option; missing voice is always generated automatically"
         required: false
@@ -63,6 +68,14 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
+      - name: Cache CLIP model
+        id: cache_clip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface/hub
+          key: clip-vit-b-32-${{ runner.os }}-v1
+          restore-keys: |
+            clip-vit-b-32-${{ runner.os }}-
       - name: Cache faster-whisper model
         id: cache_whisper
         uses: actions/cache@v4
@@ -100,42 +113,70 @@ jobs:
         if: ${{ !inputs.preview_only }}
         id: alignment_tests
         run: python -m unittest discover -s tests -p 'test_alignment.py' -v
-      - name: Preview-only strict image order
+      - name: Run image matcher self-test
+        if: ${{ !inputs.preview_only }}
+        id: matcher_self_test
+        continue-on-error: true
+        run: |
+          if python -m unittest discover -s tests -p 'test_matcher.py' -v 2>&1 | tee /tmp/matcher-self-test.log; then
+            echo "IMAGE_MATCHER_SELF_TEST=PASS"
+          else
+            status=$?
+            echo "IMAGE_MATCHER_SELF_TEST=FAIL (exit $status)"
+            tail -n 30 /tmp/matcher-self-test.log
+            exit "$status"
+          fi
+      - name: Preview-only CLIP image matching
         id: preview_matching
         if: ${{ inputs.preview_only }}
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+          AUTO_MATCH_INPUT: ${{ github.event.inputs.auto_match || 'true' }}
         run: |
           python - <<'PY'
           import os
           from pathlib import Path
-          from PIL import Image, ImageDraw, ImageFont
           from src.parser import parse_script
-          name = os.environ["PROJECT_INPUT"]
-          project = Path("projects") / name
-          scenes = parse_script(project)
-          rows = [(s.number, s.text, s.image_paths[0]) for s in scenes if s.kind == "image"]
-          output = Path("output")
+          from src.matcher import match_project
+          from src.sample_assets import ensure_thumbnail
+          name = os.environ['PROJECT_INPUT'].strip()
+          if not name or '/' in name or chr(92) in name or name in {'.', '..'}:
+              raise SystemExit('Project must be one folder name such as video-001.')
+          project = Path('projects') / name
+          if not (project / 'script.txt').is_file():
+              raise SystemExit('Missing projects/<name>/script.txt. Upload a script first.')
+          if not (project / 'images').is_dir() or not any(p.is_file() for p in (project / 'images').iterdir()):
+              raise SystemExit('No images found in projects/<name>/images/. Upload images first.')
+          output = Path('output')
           output.mkdir(parents=True, exist_ok=True)
-          width, height, cols = 420, 300, 2
-          canvas = Image.new("RGB", (cols * width, max(1, (len(rows)+cols-1)//cols)*height), "white")
-          draw = ImageDraw.Draw(canvas)
-          try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
-          except OSError: font = ImageFont.load_default()
-          lines = ["Paragraph | Image filename", "--- | ---"]
-          for i, (number, text, path) in enumerate(rows):
-              x, y = (i % cols)*width, (i//cols)*height
-              draw.rectangle((x+5,y+5,x+width-5,y+height-5), outline="gray", width=2)
-              draw.text((x+14,y+12), f"Paragraph {number}: {' '.join(text.split()[:6])}", fill="black", font=font)
-              with Image.open(path) as src:
-                  thumb=src.convert("RGB"); thumb.thumbnail((390,210))
-                  canvas.paste(thumb,(x+(width-thumb.width)//2,y+42))
-              draw.text((x+14,y+260),path.name,fill="black",font=font)
-              lines.append(f"{number} | {path.name}")
-          canvas.save(output / f"{name}-match-preview.png")
-          (output / "match-table.txt").write_text("\n".join(lines)+"\n",encoding="utf-8")
-          (output / "notes.txt").write_text(f"Project: {name}\nMode: strict filename-order image preview\n",encoding="utf-8")
-          print("PREVIEW_ONLY=PASS; voice, render, Shorts and music steps are skipped.")
+          scenes = parse_script(project, image_matches={})
+          if not any(scene.kind == 'image' for scene in scenes):
+              raise SystemExit('Script has no image scenes to match.')
+          config = {'auto_match': os.environ.get('AUTO_MATCH_INPUT', 'true').lower() != 'false'}
+          if config['auto_match']:
+              _, rows = match_project(project, scenes, output, config)
+          else:
+              _, rows = match_project(project, scenes, output, config)
+          table = output / 'match-table.txt'
+          lines = ['Scene | first 6 words | matched image | similarity score | confidence', '--- | --- | --- | --- | ---']
+          for row in rows:
+              words = ' '.join(row['text'].split()[:6]).replace('|', '/')
+              paths = row.get('images') or []
+              names = ', '.join(Path(p).name for p in paths) if paths else '(none)'
+              score = row.get('score')
+              score_text = format(score, '.3f') if isinstance(score, (int, float)) else '-'
+              lines.append(f"{row['scene']} | {words} | {names} | {score_text} | {row['confidence']}")
+          table.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          notes = output / 'notes.txt'
+          if not notes.exists():
+              notes.write_text('Project: ' + name + '\nMode: preview-only CLIP image matching\n', encoding='utf-8')
+          with notes.open('a', encoding='utf-8') as handle:
+              handle.write('\n\nIMAGE SCENE MATCH TABLE\n' + table.read_text(encoding='utf-8'))
+          ensure_thumbnail(project, output)
+          preview = output / (name + '-match-preview.png')
+          if not preview.is_file():
+              raise SystemExit('Matcher did not create the match preview PNG.')
+          print('PREVIEW_ONLY=PASS; voice, render, Shorts and music steps are skipped.')
           PY
       - name: Ensure sample project and offline inputs
         if: ${{ !inputs.preview_only }}
@@ -195,6 +236,7 @@ jobs:
           CAPTION_SIZE_INPUT: ${{ github.event.inputs.caption_size || '76' }}
           MUSIC_ON_INPUT: ${{ github.event.inputs.music_on || 'true' }}
           SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
+          AUTO_MATCH_INPUT: ${{ github.event.inputs.auto_match || 'true' }}
         run: |
           python - <<'PY'
           import os
@@ -210,13 +252,14 @@ jobs:
               size = max(40, min(100, int(os.environ.get('CAPTION_SIZE_INPUT', '76'))))
           except ValueError:
               raise SystemExit('caption_size must be a number from 40 to 100.')
+          config['auto_match'] = enabled('AUTO_MATCH_INPUT')
           config.setdefault('captions', {})['caption_mode'] = mode
           config['captions']['size'] = size
           config['captions']['card_size'] = max(48, int(round(size * 88 / 76)))
           config.setdefault('music', {})['enabled'] = enabled('MUSIC_ON_INPUT')
           Path('/tmp/config-render.yaml').write_text(yaml.safe_dump(config, sort_keys=False), encoding='utf-8')
           Path('/tmp/shorts-enabled.txt').write_text('true' if enabled('SHORTS_ON_INPUT') else 'false', encoding='utf-8')
-          print('RENDER_SETTINGS=' + str({'caption_mode': mode, 'caption_size': size, 'music_on': config['music']['enabled'], 'shorts_on': enabled('SHORTS_ON_INPUT')}))
+          print('RENDER_SETTINGS=' + str({'caption_mode': mode, 'caption_size': size, 'music_on': config['music']['enabled'], 'shorts_on': enabled('SHORTS_ON_INPUT'), 'auto_match': config['auto_match']}))
           PY
       - name: Render landscape MP4
         if: ${{ !inputs.preview_only }}
@@ -244,6 +287,8 @@ jobs:
           (target / "images").mkdir(parents=True, exist_ok=True)
           shutil.copy2(source / "script.txt", target / "script.txt")
           shutil.copytree(source / "images", target / "images", dirs_exist_ok=True)
+          if (source / "match.yaml").is_file():
+              shutil.copy2(source / "match.yaml", target / "match.yaml")
           voice = next((source / f"voice{ext}" for ext in (".mp3", ".wav", ".m4a", ".ogg")
                         if (source / f"voice{ext}").is_file()), None)
           if voice is None:
@@ -306,12 +351,14 @@ jobs:
         env:
           OUTCOME_CHECKOUT: ${{ steps.checkout.outcome }}
           OUTCOME_SETUP_PYTHON: ${{ steps.setup_python.outcome }}
+          OUTCOME_CACHE_CLIP: ${{ steps.cache_clip.outcome }}
           OUTCOME_CACHE_WHISPER: ${{ steps.cache_whisper.outcome }}
           OUTCOME_INSTALL_FFMPEG: ${{ steps.install_ffmpeg.outcome }}
           OUTCOME_INSTALL_DEPENDENCIES: ${{ steps.install_dependencies.outcome }}
           OUTCOME_INSTALL_FONT: ${{ steps.install_font.outcome }}
           OUTCOME_SYNTAX_VALIDATION: ${{ steps.syntax_validation.outcome }}
           OUTCOME_ALIGNMENT_TESTS: ${{ steps.alignment_tests.outcome }}
+          OUTCOME_MATCHER_SELF_TEST: ${{ steps.matcher_self_test.conclusion }}
           OUTCOME_ENSURE_SAMPLE: ${{ steps.ensure_sample.outcome }}
           OUTCOME_PREVIEW_MATCHING: ${{ steps.preview_matching.outcome }}
           OUTCOME_RENDER_LANDSCAPE: ${{ steps.render_landscape.outcome }}
@@ -326,14 +373,16 @@ jobs:
           ordered = [
               ("OUTCOME_CHECKOUT", "Checkout", None),
               ("OUTCOME_SETUP_PYTHON", "Set up Python", None),
+              ("OUTCOME_CACHE_CLIP", "Cache CLIP model", None),
               ("OUTCOME_CACHE_WHISPER", "Cache faster-whisper model", None),
               ("OUTCOME_INSTALL_FFMPEG", "Install FFmpeg and fonts", None),
               ("OUTCOME_INSTALL_DEPENDENCIES", "Install dependencies", None),
               ("OUTCOME_INSTALL_FONT", "Install optional Nunito font", None),
               ("OUTCOME_SYNTAX_VALIDATION", "Run syntax and YAML validation", None),
               ("OUTCOME_ALIGNMENT_TESTS", "Run alignment unit tests", None),
+              ("OUTCOME_MATCHER_SELF_TEST", "Run image matcher self-test", "/tmp/matcher-self-test.log"),
               ("OUTCOME_ENSURE_SAMPLE", "Ensure sample project and offline inputs", None),
-              ("OUTCOME_PREVIEW_MATCHING", "Preview-only strict image order", None),
+              ("OUTCOME_PREVIEW_MATCHING", "Preview-only CLIP image matching", None),
               ("OUTCOME_RENDER_LANDSCAPE", "Render landscape MP4", "/tmp/render-main.log"),
               ("OUTCOME_RENDER_CARD", "Render caption-card MP4", "/tmp/render-card.log"),
               ("OUTCOME_RENDER_SHORTS", "Render vertical Shorts MP4", None),

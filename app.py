@@ -15,6 +15,8 @@ REPO = "miang20/manga-video-maker"
 API = "https://api.github.com"
 BRANCH = "main"
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+def natural_key(name: str):
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\\d+)", name)]
 VOICE_EXTS = {".mp3", ".wav", ".m4a", ".ogg"}
 MAX_FILE_BYTES = 25 * 1024 * 1024
 
@@ -103,10 +105,10 @@ def parse_paragraphs(script: str):
     result = []
     for block in blocks:
         lines = [line.strip() for line in block.splitlines() if line.strip()]
-        hints = [line[4:].strip() for line in lines if line.upper().startswith("IMG:")]
         spoken = [line for line in lines if not line.upper().startswith("IMG:")]
         if spoken:
-            result.append({"text": " ".join(spoken), "hint": hints[0] if hints else ""})
+            text = " ".join(spoken)
+            result.append({"text": text, "is_card": text.upper().startswith("CARD:")})
     return result
 
 def dispatch(token: str, project: str, preview: bool, settings: dict):
@@ -114,8 +116,7 @@ def dispatch(token: str, project: str, preview: bool, settings: dict):
                json={"ref": BRANCH, "inputs": {"project": project, "preview_only": "true" if preview else "false",
                     "caption_mode": settings["caption_mode"], "caption_size": str(settings["caption_size"]),
                     "music_on": "true" if settings["music_on"] else "false",
-                    "shorts_on": "true" if settings["shorts_on"] else "false",
-                    "auto_match": "true" if settings["auto_match"] else "false"}})
+                    "shorts_on": "true" if settings["shorts_on"] else "false"}})
 
 def run_for_project(token: str, project: str, started: float):
     runs = api(token, "GET", f"/repos/{REPO}/actions/workflows/render.yml/runs?branch={BRANCH}&event=workflow_dispatch&per_page=30").get("workflow_runs", [])
@@ -188,35 +189,41 @@ except Exception:
 default_project = f"video-{len(existing) + 1:03d}"
 project_name = st.text_input("Project name", value=st.session_state.get("project_name", default_project), max_chars=71)
 script_upload = st.file_uploader("1. script.txt (optional if you paste below)", type=["txt"], key="script_upload")
-script_paste = st.text_area("Or paste your script here", height=160, placeholder="Har paragraph ke darmiyan blank line rakhein. Optional hint: IMG: rainy street at night")
+script_paste = st.text_area("Or paste your script here", height=160, placeholder="Har paragraph ke darmiyan blank line rakhein. Images filename ke natural order mein use hongi.")
 script_text = script_upload.getvalue().decode("utf-8", errors="replace") if script_upload else script_paste
 paragraphs = parse_paragraphs(script_text) if script_text.strip() else []
-st.subheader("2. Images — any filenames, any order")
+st.subheader("2. Images — natural filename order")
 images = st.file_uploader("Select all scene images", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="images")
 voice = st.file_uploader("3. Voice file (required for full render)", type=sorted(VOICE_EXTS), key="voice")
 music = st.file_uploader("Optional background music", type=["mp3", "wav", "m4a", "ogg"], key="music")
 
+ordered_images = sorted(
+    [f for f in (images or []) if PurePosixPath(f.name).suffix.lower() in IMAGE_EXTS],
+    key=lambda f: natural_key(PurePosixPath(f.name).name),
+)
+image_paragraphs = [(i, p) for i, p in enumerate(paragraphs, 1) if not p.get("is_card")]
 if paragraphs:
-    st.subheader("Image hints (optional)")
-    st.caption("Har paragraph ke neeche chhota visual hint likhein. Ye IMG: lines ke saath upload hongay.")
-    edited = []
-    for i, para in enumerate(paragraphs, 1):
-        st.markdown(f"**Paragraph {i}:** {para['text'][:220]}")
-        hint = st.text_input(f"Image hint {i}", value=para["hint"], key=f"hint-{i}")
-        edited.append({"text": para["text"], "hint": hint})
-    if st.button("Apply hints to script"):
-        script_text = "\n\n".join(p["text"] + (("\nIMG: " + p["hint"]) if p["hint"] else "") for p in edited)
-        st.session_state["script_with_hints"] = script_text
-        st.success("Hints ready. Render ke waqt apply hongay.")
-if st.session_state.get("script_with_hints"):
-    script_text = st.session_state["script_with_hints"]
+    st.subheader("Image-to-paragraph order preview")
+    st.caption("Natural filename order is fixed. No automatic matching or reordering is performed.")
+    if len(ordered_images) != len(image_paragraphs):
+        st.warning(f"Image count mismatch: {len(ordered_images)} images for {len(image_paragraphs)} image paragraphs. Add/remove images before rendering.")
+    for index, (paragraph_number, para) in enumerate(image_paragraphs):
+        if index >= len(ordered_images):
+            st.warning(f"Paragraph {paragraph_number}: image missing.")
+            continue
+        image_file = ordered_images[index]
+        left, right = st.columns([1, 2])
+        with left:
+            st.image(image_file.getvalue(), caption=f"Paragraph {paragraph_number} · {PurePosixPath(image_file.name).name}", use_container_width=True)
+        with right:
+            st.markdown(f"**Paragraph {paragraph_number}**")
+            st.write(para["text"][:350])
 
 with st.expander("Settings", expanded=True):
     caption_mode = st.radio("Caption mode", ["overlay", "card"], horizontal=True, index=0)
     caption_size = st.slider("Caption size", 40, 100, 76, 2)
     music_on = st.toggle("Background music on", value=True)
     shorts_on = st.toggle("Create vertical Shorts", value=True)
-    auto_match = st.toggle("Auto-match images to script", value=True)
 
 st.info("Note: large uploads are sent to GitHub Contents API. Per-file app limit is 25 MB; GitHub's API also has practical limits.")
 def start_job(preview: bool):
@@ -228,12 +235,14 @@ def start_job(preview: bool):
         st.session_state["project_name"] = name
         if not script_text.strip():
             raise ValueError("Pehle script upload ya paste karein.")
-        if not images:
+        if not ordered_images:
             raise ValueError("Kam az kam 1 image select karein.")
+        if len(ordered_images) != len(image_paragraphs):
+            raise ValueError(f"Image count mismatch: {len(ordered_images)} images for {len(image_paragraphs)} image paragraphs. Rendering stopped; count must match exactly.")
         if not preview and not voice:
             raise ValueError("Full render ke liye voice file upload karein.")
         uploads = [("script.txt", script_text.encode("utf-8"))]
-        for f in images:
+        for f in ordered_images:
             if PurePosixPath(f.name).suffix.lower() not in IMAGE_EXTS:
                 continue
             uploads.append(("images/" + PurePosixPath(f.name).name, f.getvalue()))
@@ -253,7 +262,7 @@ def start_job(preview: bool):
                 upload_file(token, f"projects/{name}/{filename}", data, f"Upload {name} project input")
                 st.write(f"Uploaded: {filename}")
             settings = {"caption_mode": caption_mode, "caption_size": caption_size, "music_on": music_on,
-                        "shorts_on": shorts_on, "auto_match": auto_match}
+                        "shorts_on": shorts_on}
             st.session_state["active_run_started"] = time.time()
             dispatch(token, name, preview, settings)
             status.update(label="Workflow dispatch request sent", state="complete")
