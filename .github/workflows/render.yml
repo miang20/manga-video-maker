@@ -17,7 +17,7 @@ on:
         required: false
         type: string
       preview_only:
-        description: "Only prepare and upload the CLIP image-match preview"
+        description: "Only validate strict filename-order image preview"
         required: false
         default: false
         type: boolean
@@ -41,11 +41,6 @@ on:
         type: boolean
       shorts_on:
         description: "Shorts toggle requested by the front end"
-        required: false
-        default: true
-        type: boolean
-      auto_match:
-        description: "Auto image matching toggle requested by the front end"
         required: false
         default: true
         type: boolean
@@ -281,7 +276,6 @@ jobs:
           OUTCOME_SYNTAX_VALIDATION: ${{ steps.syntax_validation.outcome }}
           OUTCOME_ALIGNMENT_TESTS: ${{ steps.alignment_tests.outcome }}
           OUTCOME_ENSURE_SAMPLE: ${{ steps.ensure_sample.outcome }}
-          OUTCOME_PREVIEW_MATCHING: ${{ steps.preview_matching.outcome }}
           OUTCOME_RENDER_LANDSCAPE: ${{ steps.render_landscape.outcome }}
           OUTCOME_RENDER_CARD: ${{ steps.render_card.outcome }}
           OUTCOME_RENDER_SHORTS: ${{ steps.render_shorts.outcome }}
