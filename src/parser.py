@@ -20,18 +20,6 @@ def _num(name):
 def _natural(p):
     return [int(x) if x.isdigit() else x.lower() for x in re.split(r"(\d+)", p.name)]
 
-def _read_match_yaml(path: Path):
-    if not path.is_file():
-        return None
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    if not isinstance(data, dict):
-        raise ValueError(f"{path} must map scene numbers to image filenames.")
-    mapping = data.get("scenes", data)
-    if not isinstance(mapping, dict):
-        raise ValueError(f"{path} must map scene numbers to image filenames.")
-    return {int(k): [str(v)] if isinstance(v, str) else [str(item) for item in v]
-            for k, v in mapping.items()}
-
 def parse_script(project_dir: Path, image_matches=None):
     script = project_dir / "script.txt"
     if not script.is_file():
@@ -42,15 +30,6 @@ def parse_script(project_dir: Path, image_matches=None):
     blocks = [b.strip() for b in re.split(r"\n\s*\n", raw) if b.strip()]
     folder = project_dir / "images"
     imgs = sorted([p for p in folder.glob("*") if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}], key=_natural) if folder.exists() else []
-    manual_matches = _read_match_yaml(project_dir / "match.yaml")
-    if manual_matches is not None:
-        by_name = {image.name: image for image in imgs}
-        for scene_number, names in manual_matches.items():
-            if scene_number < 1:
-                raise ValueError(f"match.yaml contains invalid scene number {scene_number}.")
-            for name in names:
-                if name not in by_name:
-                    raise FileNotFoundError(f"match.yaml scene {scene_number} references missing image: {name}")
     scenes = []
     music = None
     for n, block in enumerate(blocks, 1):
@@ -61,31 +40,25 @@ def parse_script(project_dir: Path, image_matches=None):
                 raise ValueError(f"Paragraph {n}: MUSIC: needs a track filename.")
             if not lines:
                 continue
-        hints = [line[4:].strip() for line in lines if line.upper().startswith("IMG:")]
-        if len(hints) > 1:
-            raise ValueError(f"Paragraph {n}: use at most one IMG: hint line.")
-        body_lines = [line for line in lines if not line.upper().startswith("IMG:")]
+        body_lines = [line for line in lines if not line.upper().startswith('IMG:')]
         body = "\n".join(body_lines).strip()
         if body.upper().startswith("CARD:"):
             card = body.split(":", 1)[1].strip()
             if not card:
                 raise ValueError(f"Paragraph {n}: CARD: is missing its text.")
-            scenes.append(Scene(n, card, "card", [], music, hints[0] if hints else ""))
+            scenes.append(Scene(n, card, "card", [], music, ""))
             music = None
             continue
         if not body:
             raise ValueError(f"Paragraph {n} has no spoken text after removing IMG: hints.")
-        if image_matches is not None:
-            found = image_matches.get(n, [])
-        elif manual_matches is not None:
-            found = manual_matches.get(n, [])
-        else:
-            found = [p for p in imgs if _num(p.name) == n]
-        found = [Path(p) if isinstance(p, (str, Path)) else p for p in found]
-        if not found and image_matches is None:
-            raise FileNotFoundError(f"Missing image for paragraph {n}: expected {n:02d}.png (or {n:02d}a.png, {n:02d}b.png, etc.) in {folder}")
-        scenes.append(Scene(n, body, "image", found, music, hints[0] if hints else ""))
+        found = [p for p in imgs if _num(p.name) == n]
+        scenes.append(Scene(n, body, "image", found, music, ""))
         music = None
     if not scenes:
         raise ValueError("No renderable paragraphs were found in script.txt.")
+    image_scenes = [scene for scene in scenes if scene.kind == "image"]
+    if len(imgs) != len(image_scenes):
+        raise ValueError(f"Image count mismatch: found {len(imgs)} images for {len(image_scenes)} image paragraphs. Add or remove images so each image paragraph has exactly one image.")
+    for scene, image in zip(image_scenes, imgs):
+        scene.image_paths = [image]
     return scenes

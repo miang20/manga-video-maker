@@ -47,14 +47,7 @@ def render_project(project, config_path=None):
         from src.sample_assets import ensure_sample_project
         ensure_sample_project(project)
 
-    match_rows = None
-    if bool(cfg.get("auto_match", True)):
-        scenes = parse_script(project, image_matches={})
-        if any(scene.kind == "image" for scene in scenes):
-            from src.matcher import match_project
-            _, match_rows = match_project(project, scenes, ROOT / "output", cfg)
-    else:
-        scenes = parse_script(project)
+    scenes = parse_script(project)
     if not scenes:
         raise RuntimeError("Project has no scenes.")
     video_cfg = cfg.get("video", {})
@@ -86,7 +79,7 @@ def render_project(project, config_path=None):
     if font is None:
         raise FileNotFoundError("No caption font found. Run python setup_fonts.py or install fonts-dejavu-core.")
 
-    # Optimize exactly the files selected for each scene; preserve CLIP/manual assignments.
+    # Optimize images in strict natural filename order, one image per image paragraph.
     image_scenes = [scene for scene in scenes if scene.kind == "image"]
     if image_scenes:
         prepared_images = iter(prepare_images(project, image_scenes))
@@ -263,16 +256,6 @@ def render_project(project, config_path=None):
              f"Caption mode: {caption_mode}", f"Caption chunks: {len(caption_chunks)}", "Paragraph timings:"]
     notes.extend(f"{i}. {start:.2f}s - {end:.2f}s: {scene.text}" for i, (scene, (start, end)) in enumerate(zip(scenes, scene_intervals), 1))
     notes_path.write_text("\n".join(notes) + "\n", encoding="utf-8")
-    if match_rows is not None:
-        with notes_path.open("a", encoding="utf-8") as handle:
-            handle.write("\n\nIMAGE SCENE MATCH TABLE\n")
-            handle.write("Scene | first 6 words | matched image | similarity score | confidence\n")
-            handle.write("--- | --- | --- | --- | ---\n")
-            for row in match_rows:
-                words = " ".join(row["text"].split()[:6]).replace("|", "/")
-                names = ", ".join(path.name for path in row["images"]) if row["images"] else "(none)"
-                score = f"{row['score']:.3f}" if isinstance(row["score"], (int, float)) else "-"
-                handle.write(f"{row['scene']} | {words} | {names} | {score} | {row['confidence']}\n")
 
     from src.sample_assets import ensure_thumbnail
     ensure_thumbnail(project, ROOT / "output")

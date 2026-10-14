@@ -8,7 +8,7 @@ def natural_key(path):
     return [int(x) if x.isdigit() else x.lower() for x in re.split(r"(\d+)",path.stem)]
 
 def prepare_images(project: Path, scenes):
-    """Optimize only images already assigned to scenes, preserving matcher/manual mapping."""
+    """Optimize images already assigned in strict natural filename order."""
     cache=project/"work"/"optimized-images"
     cache.mkdir(parents=True,exist_ok=True)
     result=[]

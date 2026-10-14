@@ -1,7 +1,3 @@
-auto_match: true
-matcher:
-  model: clip-ViT-B-32
-  model_cache: ~/.cache/huggingface/hub
 voice:
   name: en-US-GuyNeural
   rate: "+0%"
