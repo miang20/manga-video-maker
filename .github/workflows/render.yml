@@ -44,11 +44,6 @@ on:
         required: false
         default: true
         type: boolean
-      auto_match:
-        description: "Auto image matching toggle requested by the front end"
-        required: false
-        default: true
-        type: boolean
       test_voice:
         description: "Compatibility option; missing voice is always generated automatically"
         required: false
