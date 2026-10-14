@@ -16,7 +16,7 @@ API = "https://api.github.com"
 BRANCH = "main"
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 def natural_key(name: str):
-    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\\d+)", name)]
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
 VOICE_EXTS = {".mp3", ".wav", ".m4a", ".ogg"}
 MAX_FILE_BYTES = 25 * 1024 * 1024
 
