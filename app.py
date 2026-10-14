@@ -270,13 +270,8 @@ def start_job(preview: bool):
     except Exception as exc:
         st.error(f"Request complete nahi hui: {exc}")
 
-c1, c2 = st.columns(2)
-with c1:
-    if st.button("🚀 Render full video", type="primary", use_container_width=True):
-        start_job(False)
-with c2:
-    if st.button("🖼️ Preview image order only", use_container_width=True):
-        start_job(True)
+if st.button("🚀 Render full video", type="primary", use_container_width=True):
+    start_job(False)
 
 if st.session_state.get("watch_run") and token:
     name = st.session_state.get("active_project", "")
