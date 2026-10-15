@@ -129,7 +129,7 @@ for label, status, detail in results:
 markdown = ["| Check | Result | Detail |", "|---|---|---|"]
 markdown.extend(f"| {label} | {status} | {str(detail).replace('|', '/')} |" for label, status, detail in results)
 (output / "quality-checks.md").write_text("\n".join(markdown) + "\n", encoding="utf-8")
-          failed = [label for label, status, _ in results if status == "FAIL"]
+failed = [label for label, status, _ in results if status == "FAIL"]
 if failed and not first_error_text:
     first_label = failed[0]
     first_error_text = f"Step: Final self-check\nError: {first_label}\n"
