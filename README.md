@@ -1,45 +1,50 @@
-# Manga Video Maker
+# Master Video Maker
 
-## Android quick start
+General-purpose renderer for any niche and any uploaded scene-image style. The narration is never rewritten and images are never smart-picked: numbered files are used in strict natural filename order.
 
-The Streamlit app is a lightweight front end. Rendering remains in GitHub Actions; Streamlit does not run FFmpeg, Whisper, or CLIP.
+## Android: start a new project in 3 steps
 
-## Deploy the app on Streamlit Community Cloud from an Android phone, step by step
+1. Create a folder under `projects/<project-name>/` with `script.txt` and an `images/` folder.
+2. Upload your exact script and numbered scene images (`01.png`, `02.jpg`, `03.webp`, etc.). Add `voice.wav` (or another supported `voice.*`) for upload voice. Voice upload is optional in Kokoro mode.
+3. Open GitHub → Actions → Render Video → Run workflow, enter the project folder name and settings, then download the MP4 and companion files from the workflow artifact.
 
-1. Open [Streamlit Community Cloud](https://share.streamlit.io/) in Android Chrome and sign in with GitHub.
-2. Choose **Create app**, repository `miang20/manga-video-maker`, branch `main`, and main file path `app.py`.
-3. Open the app's **Advanced settings / Secrets** before deploying. Add the secret below (replace the placeholder locally; never paste a real token into chat or source code):
-   ```toml
-   GITHUB_TOKEN = "github_pat_your_fine_grained_token_here"
-   ```
-4. Deploy the app. If you change files later, use **Manage app → Reboot app** if the change does not appear automatically.
-5. Keep the repository public if you want the GitHub Actions workflow to use the free public-repository allowance. Do not put your token in the repository, app code, screenshots, or logs.
+## Project files
 
-## GitHub fine-grained token permissions
+- `script.txt`: spoken paragraphs separated by a blank line; script text is preserved.
+- `images/`: PNG, JPG, JPEG, or WebP; exactly one image per image paragraph, strict natural filename order.
+- `voice.mp3`, `voice.wav`, `voice.m4a`, or `voice.ogg`: optional when `voice_source` is `kokoro`.
+- `music.*`: optional background music.
+- `project.json`: optional object; all fields are optional.
 
-Create a fine-grained personal access token scoped to **Only select repositories → miang20/manga-video-maker**. Grant only:
+Example optional settings:
 
-- **Contents: Read and write** — upload and replace files under `projects/<name>/`.
-- **Actions: Read and write** — dispatch the render workflow, inspect run status, and download artifacts.
-- **Metadata: Read-only** — repository metadata (normally granted automatically).
+```json
+{
+  "voice_source": "upload",
+  "voice": "af_heart",
+  "voice_speed": 1.0,
+  "style": "bw_manga",
+  "motion_intensity": "normal",
+  "music": "on"
+}
+```
 
-Set an expiration and revoke the token if it is exposed. Streamlit secrets are server-side; never display or log the token.
+## Styles
 
-## Project format
+- `bw_manga`: default legacy grain/look settings.
+- `color`: preserves uploaded RGB colors and uses very light grain.
+- `clean`: disables grain.
 
-- `script.txt`: paragraphs separated by a blank line. Optional `IMG: description` hint lines are not spoken or captioned.
-- Voice: `voice.mp3`, `voice.wav`, `voice.m4a`, or `voice.ogg`.
-- `images/`: PNG/JPG/JPEG/WebP files. With `auto_match: true`, images are matched to scenes using CPU CLIP embeddings. Manual matching uses `match.yaml`.
-- Optional music can be uploaded with a project; the renderer prefers `projects/<name>/music.*` when enabled, then falls back to `assets/music/`.
+To add a style, copy a JSON file in `config/styles/`, rename it, and edit its settings. Select it in the project settings or manual workflow. Captions are rendered independently of image style.
 
-## Outputs
+## Voice
 
-The workflow uploads files from `output/*`, including MP4s, SRT, `notes.txt`, and thumbnail when those files are produced. Artifacts are retained for 14 days. Review the `*-match-preview.png` contact sheet and the workflow's match notes before publishing.
+`upload` keeps the existing uploaded voice workflow. `kokoro` generates English narration from the script using the selected Kokoro English voice, sentence/paragraph pauses, and normalized pipeline audio. Kokoro dependencies are installed only when Kokoro is selected. Failure stops the render with an explicit error; there is no silent voice fallback.
 
-## Current front-end integration notes
+## Outputs and compatibility
 
-- The app writes project inputs to `projects/<name>/` on `main` using GitHub's Contents API, then requests a workflow dispatch and polls Actions.
-- The app is only a UI; the render job stays in Actions.
-- GitHub's Contents API has practical upload limits. The app rejects individual files larger than 25 MB before deleting old project files. GitHub's Contents API may reject some files below that limit too; compress large media before uploading.
-- Preview-only runs the CLIP image matcher and uploads the contact-sheet PNG, `match-table.txt`, `notes.txt`, and thumbnail without running voice preparation or rendering steps. Cached model availability and GitHub runner startup affect total time.
-- Caption mode/size, music, Shorts, and auto-match settings are passed into the render configuration. These changes still require a manual Actions run to verify end-to-end behavior.
+The manual-only GitHub Actions workflow publishes landscape MP4, vertical Shorts MP4, SRT, notes, and thumbnail. Existing caption word timing/appearance and music sidechain ducking are retained. Default settings are intended to preserve existing output behavior.
+
+## Streamlit
+
+Deploy `app.py` to Streamlit Community Cloud and set `GITHUB_TOKEN` in app Secrets. Give the token only Contents read/write and Actions read/write permissions. The app uploads project files and dispatches the manual workflow; rendering runs in GitHub Actions. Never put the token in source code or chat.
