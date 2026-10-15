@@ -1,6 +1,18 @@
 name: Render Video
 run-name: Render ${{ inputs.project || 'video-001' }}${{ inputs.preview_only && ' (preview only)' || '' }}
 on:
+  workflow_call:
+    inputs:
+      project: {type: string, required: false, default: video-001}
+      voice_source: {type: string, required: false, default: project}
+      voice: {type: string, required: false, default: af_heart}
+      voice_speed: {type: string, required: false, default: '1.0'}
+      style: {type: string, required: false, default: project}
+      motion_intensity: {type: string, required: false, default: project}
+      music_on: {type: boolean, required: false, default: true}
+      shorts_on: {type: boolean, required: false, default: true}
+      preview_only: {type: boolean, required: false, default: false}
+      artifact_name: {type: string, required: false, default: ''}
   workflow_dispatch:
     inputs:
       project:
@@ -172,7 +184,7 @@ jobs:
         if: ${{ !inputs.preview_only }}
         id: ensure_sample
         env:
-          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+          PROJECT_INPUT: ${{ inputs.project || 'video-001' }}
         run: |
           python - <<'PY'
           import os
