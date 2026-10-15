@@ -1,11 +1,11 @@
 from pathlib import Path
-import numpy as np
-import soundfile as sf
 
 ENGLISH_VOICES = ('af_heart','af_alloy','af_aoede','af_bella','af_jessica','af_kore','af_nicole','af_nova','af_river','af_sarah','af_sky','am_adam','am_echo','am_eric','am_fenrir','am_liam','am_michael','am_onyx','am_puck','am_santa','bf_alice','bf_emma','bf_isabella','bf_lily','bm_daniel','bm_fable','bm_george','bm_lewis')
 def synthesize_project_voice(project: Path, scenes, voice='af_heart', speed=1.0):
     if voice not in ENGLISH_VOICES:
         raise ValueError('Unsupported Kokoro English voice: ' + str(voice))
+    import numpy as np
+    import soundfile as sf
     try:
         from kokoro import KPipeline
     except Exception as exc:
