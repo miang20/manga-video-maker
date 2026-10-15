@@ -167,7 +167,7 @@ jobs:
       - name: Run alignment unit tests
         if: ${{ !inputs.preview_only }}
         id: alignment_tests
-        run: python -m unittest discover -s tests -p 'test_alignment.py' -v
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Ensure sample project and offline inputs
         if: ${{ !inputs.preview_only }}
         id: ensure_sample
