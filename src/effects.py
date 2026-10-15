@@ -1,6 +1,5 @@
 import math
 import random
-import hashlib
 from PIL import Image, ImageDraw, ImageFont
 from .utils import run
 
@@ -16,10 +15,13 @@ def render_still(image, output, duration, width, height, fps, zoom, direction, g
     else:
         z = f"min({zoom_start:.6f}+{delta:.6f}*on/{frames},{zoom:.6f})"
     rng = random.Random(str(motion_seed if motion_seed is not None else image))
-    pan_x = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
-    pan_y = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
-    x = f"max(0,min(iw-iw/zoom,(iw-iw/zoom)/2+({pan_x:.5f})*iw*sin(on/{frames}*PI)))"
-    y = f"max(0,min(ih-ih/zoom,(ih-ih/zoom)/2+({pan_y:.5f})*ih*sin(on/{frames}*PI)))"
+    pan_direction = rng.choice(("left", "right", "up", "down"))
+    pan = max(0.0, min(0.03, float(max_pan_fraction)))
+    progress = f"(on/{frames})"
+    x_offset = f"-{pan:.5f}*iw*{progress}" if pan_direction == "left" else f"{pan:.5f}*iw*{progress}" if pan_direction == "right" else "0"
+    y_offset = f"-{pan:.5f}*ih*{progress}" if pan_direction == "up" else f"{pan:.5f}*ih*{progress}" if pan_direction == "down" else "0"
+    x = f"max(0,min(iw-iw/zoom,(iw-iw/zoom)/2+({x_offset})))"
+    y = f"max(0,min(ih-ih/zoom,(ih-ih/zoom)/2+({y_offset})))"
     vf = [
         f"scale={width}:{height}:force_original_aspect_ratio=increase",
         f"crop={width}:{height}",
