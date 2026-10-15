@@ -14,7 +14,7 @@ def synthesize_project_voice(project: Path, scenes, voice='af_heart', speed=1.0)
     pipeline = KPipeline(lang_code='a')
     rate, chunks = 24000, []
     for pi, scene in enumerate(scenes):
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', scene.text.strip()) if s.strip()]
+        sentences = [s.strip() for s in re.split(r'(?<=[,.!?])\s+', scene.text.strip()) if s.strip()]
         for si, sentence in enumerate(sentences):
             pieces = []
             try:
