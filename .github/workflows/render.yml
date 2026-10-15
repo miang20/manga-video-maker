@@ -429,6 +429,7 @@ jobs:
           duration=float(info['format']['duration'])
           times=[duration*x/7 for x in (1,2,3,4,5,6)]
           frames=[]
+          edge_failures=[]
           for i,t in enumerate(times,1):
               path=Path('/tmp')/f'frame-preview-{i}.png'
               subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-y','-ss',f'{t:.3f}','-i',str(video),'-frames:v','1','-vf','scale=480:-1',str(path)],check=True)
@@ -441,7 +442,7 @@ jobs:
               for side,values in zip(('top','bottom','left','right'),strips):
                   black=sum(1 for rgb in values if max(rgb)<16)/max(1,len(values))
                   if black > .97:
-                      raise SystemExit(f'FRAME_EDGE_CHECK=FAIL; sample {i} {side} edge is black ({black:.1%})')
+                      edge_failures.append(f'sample {i} {side} edge is black ({black:.1%})')
               frames.append(image)
           tile_w,tile_h=480,frames[0].height
           sheet=Image.new('RGB',(tile_w*3,(tile_h+28)*2),'white')
@@ -451,8 +452,10 @@ jobs:
               sheet.paste(im,(x,y+28)); draw.text((x+8,y+7),f'Frame {i+1} @ {times[i]:.1f}s',fill='black')
           Path('output').mkdir(exist_ok=True)
           sheet.save('output/frames-preview.png')
-          print('FRAME_EDGE_CHECK=PASS; sampled 6 frames; no black edge bars detected')
           print('FRAME_PREVIEW=output/frames-preview.png')
+          if edge_failures:
+              raise SystemExit('FRAME_EDGE_CHECK=FAIL; ' + '; '.join(edge_failures))
+          print('FRAME_EDGE_CHECK=PASS; sampled 6 frames; no black edge bars detected')
           PY
       - name: Record first workflow error
         id: record_first_error
