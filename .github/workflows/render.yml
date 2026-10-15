@@ -492,6 +492,7 @@ jobs:
           OUTCOME_RENDER_CARD: ${{ steps.render_card.outcome }}
           OUTCOME_RENDER_SHORTS: ${{ steps.render_shorts.outcome }}
           OUTCOME_VERIFY_OUTPUTS: ${{ steps.verify_outputs.outcome }}
+          OUTCOME_MEDIA_QUALITY_CHECKS: ${{ steps.media_quality_checks.outcome }}
         run: |
           mkdir -p output
           python - <<'PY'
@@ -511,6 +512,7 @@ jobs:
               ("OUTCOME_RENDER_CARD", "Render caption-card MP4", "/tmp/render-card.log"),
               ("OUTCOME_RENDER_SHORTS", "Render vertical Shorts MP4", None),
               ("OUTCOME_VERIFY_OUTPUTS", "Verify MP4 streams and duration", None),
+              ("OUTCOME_MEDIA_QUALITY_CHECKS", "Check voice trimming, duration and preview frames", "/tmp/render-main.log"),
           ]
           failed = next((item for item in ordered if os.environ.get(item[0]) == "failure"), None)
           destination = Path("output/first-error.txt")
@@ -658,7 +660,10 @@ jobs:
           print("|---|---|---|")
           for label, status, detail in results:
               print(f"| {label} | {status} | {detail.replace('|', '/')} |")
-          failed = [label for label, status, _ in results if status == "FAIL"]
+          markdown = ["| Check | Result | Detail |", "|---|---|---|"]
+          markdown.extend(f"| {label} | {status} | {str(detail).replace('|', '/')} |" for label, status, detail in results)
+          (output / "quality-checks.md").write_text("\\n".join(markdown) + "\\n", encoding="utf-8")
+                    failed = [label for label, status, _ in results if status == "FAIL"]
           if failed and not first_error_text:
               first_label = failed[0]
               first_error_text = f"Step: Final self-check\nError: {first_label}\n"
