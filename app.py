@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import calendar
 import io
+import json
 import re
 import time
 import zipfile
@@ -20,7 +21,7 @@ def natural_key(name: str):
 VOICE_EXTS = {".mp3", ".wav", ".m4a", ".ogg"}
 MAX_FILE_BYTES = 25 * 1024 * 1024
 
-st.set_page_config(page_title="Manga Video Maker", page_icon="🎬", layout="centered")
+st.set_page_config(page_title="Master Video Maker", page_icon="🎬", layout="centered")
 st.markdown("""
 <style>
 .block-container {max-width: 850px; padding-top: 1.2rem; padding-bottom: 3rem}
@@ -28,7 +29,7 @@ st.markdown("""
 [data-testid="stFileUploader"] {border-radius:12px}
 </style>
 """, unsafe_allow_html=True)
-st.title("🎬 Manga Video Maker")
+st.title("🎬 Master Video Maker")
 st.caption("Phone-friendly front end • Rendering GitHub Actions par hoti hai — Streamlit par nahi.")
 
 def api_headers(token: str) -> dict:
@@ -116,7 +117,10 @@ def dispatch(token: str, project: str, preview: bool, settings: dict):
                json={"ref": BRANCH, "inputs": {"project": project, "preview_only": "true" if preview else "false",
                     "caption_mode": settings["caption_mode"], "caption_size": str(settings["caption_size"]),
                     "music_on": "true" if settings["music_on"] else "false",
-                    "shorts_on": "true" if settings["shorts_on"] else "false"}})
+                    "shorts_on": "true" if settings["shorts_on"] else "false",
+                    "voice_source": settings["voice_source"], "voice": settings["voice"],
+                    "voice_speed": str(settings["voice_speed"]), "style": settings["style"],
+                    "motion_intensity": settings["motion_intensity"]}})
 
 def run_for_project(token: str, project: str, started: float):
     runs = api(token, "GET", f"/repos/{REPO}/actions/workflows/render.yml/runs?branch={BRANCH}&event=workflow_dispatch&per_page=30").get("workflow_runs", [])
@@ -136,7 +140,7 @@ def run_for_project(token: str, project: str, started: float):
     return max(candidates, key=lambda r: r.get("created_at", "")) if candidates else None
 def download_artifact(token: str, run_id: int):
     arts = api(token, "GET", f"/repos/{REPO}/actions/runs/{run_id}/artifacts").get("artifacts", [])
-    artifact = next((a for a in arts if a.get("name", "").startswith("manga-video-") and not a.get("expired")), None)
+    artifact = next((a for a in arts if a.get("name", "").startswith("master-video-") and not a.get("expired")), None)
     if not artifact:
         return None
     response = requests.get(artifact["archive_download_url"], headers=api_headers(token), timeout=180)
@@ -194,7 +198,14 @@ script_text = script_upload.getvalue().decode("utf-8", errors="replace") if scri
 paragraphs = parse_paragraphs(script_text) if script_text.strip() else []
 st.subheader("2. Images — natural filename order")
 images = st.file_uploader("Select all scene images", type=["png", "jpg", "jpeg", "webp"], accept_multiple_files=True, key="images")
-voice = st.file_uploader("3. Voice file (required for full render)", type=sorted(VOICE_EXTS), key="voice")
+with st.expander("Voice and visual settings", expanded=True):
+    voice_source = st.selectbox("Voice source", ["upload", "kokoro"], index=0)
+    voice_options = ["af_heart", "af_alloy", "af_aoede", "af_bella", "af_jessica", "af_kore", "af_nicole", "af_nova", "af_river", "af_sarah", "af_sky", "am_adam", "am_echo", "am_eric", "am_fenrir", "am_liam", "am_michael", "am_onyx", "am_puck", "am_santa", "bf_alice", "bf_emma", "bf_isabella", "bf_lily", "bm_daniel", "bm_fable", "bm_george", "bm_lewis"]
+    kokoro_voice = st.selectbox("Kokoro English voice", voice_options, index=0, disabled=voice_source != "kokoro")
+    voice_speed = st.slider("Voice speed", 0.7, 1.3, 1.0, 0.05, disabled=voice_source != "kokoro")
+    style = st.selectbox("Image style", ["bw_manga", "color", "clean"], index=0)
+    motion_intensity = st.selectbox("Motion intensity", ["subtle", "normal", "strong"], index=1)
+voice = st.file_uploader("3. Voice file (not needed in Kokoro mode)", type=sorted(VOICE_EXTS), key="voice")
 music = st.file_uploader("Optional background music", type=["mp3", "wav", "m4a", "ogg"], key="music")
 
 ordered_images = sorted(
@@ -239,17 +250,18 @@ def start_job(preview: bool):
             raise ValueError("Kam az kam 1 image select karein.")
         if len(ordered_images) != len(image_paragraphs):
             raise ValueError(f"Image count mismatch: {len(ordered_images)} images for {len(image_paragraphs)} image paragraphs. Rendering stopped; count must match exactly.")
-        if not preview and not voice:
-            raise ValueError("Full render ke liye voice file upload karein.")
+        if not preview and voice_source == "upload" and not voice:
+            raise ValueError("Upload mode mein voice file required hai; Kokoro mode mein upload zaroori nahi.")
         uploads = [("script.txt", script_text.encode("utf-8"))]
         for f in ordered_images:
             if PurePosixPath(f.name).suffix.lower() not in IMAGE_EXTS:
                 continue
             uploads.append(("images/" + PurePosixPath(f.name).name, f.getvalue()))
-        if voice:
+        if voice and voice_source == "upload":
             uploads.append(("voice" + PurePosixPath(voice.name).suffix.lower(), voice.getvalue()))
         if music and music_on:
             uploads.append(("music" + PurePosixPath(music.name).suffix.lower(), music.getvalue()))
+        uploads.append(("project.json", json.dumps({"voice_source": voice_source, "voice": kokoro_voice, "voice_speed": voice_speed, "style": style, "motion_intensity": motion_intensity, "music": "on" if music_on else "off"}, indent=2).encode("utf-8")))
         oversized = [(filename, len(data)) for filename, data in uploads if len(data) > MAX_FILE_BYTES]
         if oversized:
             filename, size = oversized[0]
@@ -262,7 +274,8 @@ def start_job(preview: bool):
                 upload_file(token, f"projects/{name}/{filename}", data, f"Upload {name} project input")
                 st.write(f"Uploaded: {filename}")
             settings = {"caption_mode": caption_mode, "caption_size": caption_size, "music_on": music_on,
-                        "shorts_on": shorts_on}
+                        "shorts_on": shorts_on, "voice_source": voice_source, "voice": kokoro_voice,
+                        "voice_speed": voice_speed, "style": style, "motion_intensity": motion_intensity}
             st.session_state["active_run_started"] = time.time()
             dispatch(token, name, preview, settings)
             status.update(label="Workflow dispatch request sent", state="complete")

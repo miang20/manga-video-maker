@@ -16,6 +16,8 @@ from src.captions import group_word_boundaries, write_ass
 from src.effects import render_still, text_card
 from src.utils import load_config, ensure_dirs, require_binary, run, ffprobe
 from src.shorts import make_shorts
+from src.project_settings import resolve_project_settings
+from src.kokoro_voice import synthesize_project_voice
 
 
 def duration(path):
@@ -38,9 +40,21 @@ def _concat_audio(files, output, sample_rate=44100):
         listing.unlink(missing_ok=True)
 
 
-def render_project(project, config_path=None):
+def render_project(project, config_path=None, overrides=None):
     project = Path(project).resolve()
     cfg = load_config(config_path)
+    settings = resolve_project_settings(project, overrides or {})
+    import json
+    style_path = ROOT / 'config' / 'styles' / (settings['style'] + '.json')
+    if not style_path.is_file(): raise ValueError('Unknown style preset: ' + settings['style'])
+    style_cfg = json.loads(style_path.read_text(encoding='utf-8'))
+    cfg.setdefault('grain', {})['enabled'] = bool(style_cfg.get('grain_enabled', cfg.get('grain', {}).get('enabled', True)))
+    cfg['grain']['strength'] = float(style_cfg.get('grain_strength', cfg.get('grain', {}).get('strength', 0.06)))
+    if settings.get('music') in {'on', 'off'}: cfg.setdefault('music', {})['enabled'] = settings['music'] == 'on'
+    motion_explicit = bool(settings.get('_motion_explicit', False))
+    intensity = {'subtle':0.55, 'normal':1.0, 'strong':1.45}.get(settings.get('motion_intensity','normal'),1.0) if motion_explicit else 1.0
+    cfg.setdefault('video', {})['zoom'] = 1.0 + (float(cfg.get('video',{}).get('zoom',1.15))-1.0)*intensity
+    cfg['video']['max_pan_fraction'] = float(cfg.get('video',{}).get('max_pan_fraction',0.03))*intensity
     require_binary("ffmpeg")
     require_binary("ffprobe")
     if project.name == "video-001":
@@ -87,7 +101,9 @@ def render_project(project, config_path=None):
             count = len(scene.image_paths or [])
             scene.image_paths = [next(prepared_images) for _ in range(count)]
 
-    supplied_voice = find_voice_file(project)
+    supplied_voice = find_voice_file(project) if settings.get('voice_source','upload') != 'kokoro' else None
+    if settings.get('voice_source','upload') == 'kokoro':
+        supplied_voice = synthesize_project_voice(project, scenes, settings.get('voice','af_heart'), float(settings.get('voice_speed',1.0)))
     generated_test_voice = False
     if supplied_voice is None:
         from src.sample_assets import ensure_test_voice
@@ -130,7 +146,7 @@ def render_project(project, config_path=None):
             if len(images) == 1:
                 render_still(images[0], clip, visual_duration, width, height, fps, zoom,
                              "in" if scene_index % 2 == 0 else "out",
-                             bool(grain_cfg.get("enabled", True)), grain_strength, max_pan, float(video_cfg.get("zoom_start", 1.0)))
+                             bool(grain_cfg.get("enabled", True)), grain_strength, max_pan, float(video_cfg.get("zoom_start", 1.0)), (f"{project.name}:{scene_index}" if motion_explicit else None))
             else:
                 per_image = visual_duration / len(images)
                 parts = []
@@ -139,7 +155,7 @@ def render_project(project, config_path=None):
                     part_duration = per_image + (transition if image_index < len(images) - 1 else 0.0)
                     render_still(image, part, part_duration, width, height, fps, zoom,
                                  "in" if (scene_index + image_index) % 2 == 0 else "out",
-                                 bool(grain_cfg.get("enabled", True)), grain_strength, max_pan)
+                                 bool(grain_cfg.get("enabled", True)), grain_strength, max_pan, motion_seed=(f"{project.name}:{scene_index}:{image_index}" if motion_explicit else None))
                     parts.append(part)
                 cmd = ["ffmpeg", "-y"]
                 for part in parts:
@@ -275,11 +291,16 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("project", nargs="?", default="projects/video-001")
     parser.add_argument("--config")
+    parser.add_argument("--settings-overrides")
     parser.add_argument("--shorts-start", type=float)
     parser.add_argument("--shorts-end", type=float)
     args = parser.parse_args()
     try:
-        output = render_project(Path(args.project), Path(args.config) if args.config else None)
+        overrides = {}
+        if args.settings_overrides:
+            import json
+            overrides = json.loads(Path(args.settings_overrides).read_text(encoding='utf-8'))
+        output = render_project(Path(args.project), Path(args.config) if args.config else None, overrides)
         if args.shorts_start is not None or args.shorts_end is not None:
             if args.shorts_start is None or args.shorts_end is None:
                 raise ValueError("Provide both --shorts-start and --shorts-end to create Shorts.")

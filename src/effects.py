@@ -5,7 +5,7 @@ from .utils import run
 
 
 def render_still(image, output, duration, width, height, fps, zoom, direction, grain=True,
-                 grain_opacity=0.06, max_pan_fraction=0.03, zoom_start=1.0):
+                 grain_opacity=0.06, max_pan_fraction=0.03, zoom_start=1.0, motion_seed=None):
     frames = max(1, math.ceil(duration * fps))
     zoom_start = max(1.0, float(zoom_start))
     zoom = max(zoom_start, float(zoom))
@@ -14,11 +14,22 @@ def render_still(image, output, duration, width, height, fps, zoom, direction, g
         z = f"max({zoom:.6f}-{delta:.6f}*on/{frames},{zoom_start:.6f})"
     else:
         z = f"min({zoom_start:.6f}+{delta:.6f}*on/{frames},{zoom:.6f})"
-    rng = random.Random(str(image))
-    pan_x = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
-    pan_y = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
-    x = f"max(0,min(iw-iw/zoom,(iw-iw/zoom)/2+({pan_x:.5f})*iw*sin(on/{frames}*PI)))"
-    y = f"max(0,min(ih-ih/zoom,(ih-ih/zoom)/2+({pan_y:.5f})*ih*sin(on/{frames}*PI)))"
+    if motion_seed is None:
+        # Legacy camera path is retained for existing projects with no motion setting.
+        rng = random.Random(str(image))
+        pan_x = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
+        pan_y = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
+        x = f"max(0,min(iw-iw/zoom,(iw-iw/zoom)/2+({pan_x:.5f})*iw*sin(on/{frames}*PI)))"
+        y = f"max(0,min(ih-ih/zoom,(ih-ih/zoom)/2+({pan_y:.5f})*ih*sin(on/{frames}*PI)))"
+    else:
+        rng = random.Random(str(motion_seed))
+        pan_direction = rng.choice(("left", "right", "up", "down"))
+        pan = max(0.0, min(0.03, float(max_pan_fraction)))
+        progress = f"(on/{frames})"
+        x_offset = f"-{pan:.5f}*iw*{progress}" if pan_direction == "left" else f"{pan:.5f}*iw*{progress}" if pan_direction == "right" else "0"
+        y_offset = f"-{pan:.5f}*ih*{progress}" if pan_direction == "up" else f"{pan:.5f}*ih*{progress}" if pan_direction == "down" else "0"
+        x = f"max(0,min(iw-iw/zoom,(iw-iw/zoom)/2+({x_offset})))"
+        y = f"max(0,min(ih-ih/zoom,(ih-ih/zoom)/2+({y_offset})))"
     vf = [
         f"scale={width}:{height}:force_original_aspect_ratio=increase",
         f"crop={width}:{height}",

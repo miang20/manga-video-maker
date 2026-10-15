@@ -1,4 +1,4 @@
-name: Render Manga Video
+name: Render Video
 run-name: Render ${{ inputs.project || 'video-001' }}${{ inputs.preview_only && ' (preview only)' || '' }}
 on:
   workflow_dispatch:
@@ -44,6 +44,74 @@ on:
         required: false
         default: true
         type: boolean
+      voice_source:
+        description: "Voice source"
+        required: false
+        default: project
+        type: choice
+        options:
+          - project
+          - upload
+          - kokoro
+      voice:
+        description: "Kokoro English voice"
+        required: false
+        default: af_heart
+        type: choice
+        options:
+          - af_heart
+          - af_alloy
+          - af_aoede
+          - af_bella
+          - af_jessica
+          - af_kore
+          - af_nicole
+          - af_nova
+          - af_river
+          - af_sarah
+          - af_sky
+          - am_adam
+          - am_echo
+          - am_eric
+          - am_fenrir
+          - am_liam
+          - am_michael
+          - am_onyx
+          - am_puck
+          - am_santa
+          - bf_alice
+          - bf_emma
+          - bf_isabella
+          - bf_lily
+          - bm_daniel
+          - bm_fable
+          - bm_george
+          - bm_lewis
+      voice_speed:
+        description: "Kokoro speech speed from 0.7 to 1.3"
+        required: false
+        default: "1.0"
+        type: string
+      style:
+        description: "Image style preset"
+        required: false
+        default: project
+        type: choice
+        options:
+          - project
+          - bw_manga
+          - color
+          - clean
+      motion_intensity:
+        description: "Camera motion intensity"
+        required: false
+        default: project
+        type: choice
+        options:
+          - project
+          - subtle
+          - normal
+          - strong
       test_voice:
         description: "Compatibility option; missing voice is always generated automatically"
         required: false
@@ -99,7 +167,7 @@ jobs:
       - name: Run alignment unit tests
         if: ${{ !inputs.preview_only }}
         id: alignment_tests
-        run: python -m unittest discover -s tests -p 'test_alignment.py' -v
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
       - name: Ensure sample project and offline inputs
         if: ${{ !inputs.preview_only }}
         id: ensure_sample
@@ -151,12 +219,38 @@ jobs:
           print(f"SAMPLE_IMAGES_COUNT={len(image_files)}")
           print(f"PROJECT_READY={project}")
           PY
+      - name: Install Kokoro only when selected
+        if: ${{ !inputs.preview_only }}
+        env:
+          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+          VOICE_SOURCE_INPUT: ${{ github.event.inputs.voice_source || 'project' }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          project = Path('projects') / os.environ['PROJECT_INPUT']
+          settings = {}
+          config = project / 'project.json'
+          if config.is_file(): settings = json.loads(config.read_text(encoding='utf-8'))
+          selected = os.environ.get('VOICE_SOURCE_INPUT', 'project')
+          if selected != 'project': settings['voice_source'] = selected
+          if settings.get('voice_source', 'upload') == 'kokoro':
+              subprocess.run([sys.executable, '-m', 'pip', 'install', 'kokoro', 'soundfile'], check=True)
+              print('KOKORO_DEPENDENCIES=INSTALLED')
+          else:
+              print('KOKORO_DEPENDENCIES=SKIPPED')
+          PY
       - name: Prepare effective render settings
         if: ${{ !inputs.preview_only }}
         env:
           CAPTION_MODE_INPUT: ${{ github.event.inputs.caption_mode || 'overlay' }}
           CAPTION_SIZE_INPUT: ${{ github.event.inputs.caption_size || '76' }}
           MUSIC_ON_INPUT: ${{ github.event.inputs.music_on || 'true' }}
+          VOICE_SOURCE_INPUT: ${{ github.event.inputs.voice_source || 'project' }}
+          VOICE_INPUT: ${{ github.event.inputs.voice || 'af_heart' }}
+          VOICE_SPEED_INPUT: ${{ github.event.inputs.voice_speed || '1.0' }}
+          STYLE_INPUT: ${{ github.event.inputs.style || 'project' }}
+          MOTION_INPUT: ${{ github.event.inputs.motion_intensity || 'project' }}
           SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
         run: |
           python - <<'PY'
@@ -177,6 +271,12 @@ jobs:
           config['captions']['size'] = size
           config['captions']['card_size'] = max(48, int(round(size * 88 / 76)))
           config.setdefault('music', {})['enabled'] = enabled('MUSIC_ON_INPUT')
+          import json
+          overrides = {}
+          for env_name, key in [('VOICE_SOURCE_INPUT','voice_source'),('VOICE_INPUT','voice'),('VOICE_SPEED_INPUT','voice_speed'),('STYLE_INPUT','style'),('MOTION_INPUT','motion_intensity')]:
+              value = os.environ.get(env_name, 'project')
+              if value and value != 'project': overrides[key] = float(value) if key == 'voice_speed' else value
+          Path('/tmp/settings-overrides.json').write_text(json.dumps(overrides), encoding='utf-8')
           Path('/tmp/config-render.yaml').write_text(yaml.safe_dump(config, sort_keys=False), encoding='utf-8')
           Path('/tmp/shorts-enabled.txt').write_text('true' if enabled('SHORTS_ON_INPUT') else 'false', encoding='utf-8')
           print('RENDER_SETTINGS=' + str({'caption_mode': mode, 'caption_size': size, 'music_on': config['music']['enabled'], 'shorts_on': enabled('SHORTS_ON_INPUT')}))
@@ -188,7 +288,7 @@ jobs:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
           set -o pipefail
-          python render.py "projects/${PROJECT_INPUT}" --config /tmp/config-render.yaml 2>&1 | tee /tmp/render-main.log
+          python render.py "projects/${PROJECT_INPUT}" --config /tmp/config-render.yaml --settings-overrides /tmp/settings-overrides.json 2>&1 | tee /tmp/render-main.log
       - name: Render caption-card MP4
         if: ${{ !inputs.preview_only }}
         id: render_card
@@ -221,7 +321,7 @@ jobs:
           PY
           cp output/notes.txt /tmp/landscape-notes.txt
           set -o pipefail
-          python render.py "projects/${PROJECT_INPUT}-card" --config /tmp/config-card.yaml 2>&1 | tee /tmp/render-card.log
+          python render.py "projects/${PROJECT_INPUT}-card" --config /tmp/config-card.yaml --settings-overrides /tmp/settings-overrides.json 2>&1 | tee /tmp/render-card.log
           cp /tmp/landscape-notes.txt output/notes.txt
       - name: Render vertical Shorts MP4
         if: ${{ !inputs.preview_only && inputs.shorts_on }}
@@ -462,7 +562,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: manga-video-${{ github.event.inputs.project || 'video-001' }}
+          name: master-video-${{ github.event.inputs.project || 'video-001' }}
           path: output/*
           if-no-files-found: warn
           retention-days: 14
