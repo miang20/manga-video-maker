@@ -51,7 +51,8 @@ def render_project(project, config_path=None, overrides=None):
     cfg.setdefault('grain', {})['enabled'] = bool(style_cfg.get('grain_enabled', cfg.get('grain', {}).get('enabled', True)))
     cfg['grain']['strength'] = float(style_cfg.get('grain_strength', cfg.get('grain', {}).get('strength', 0.06)))
     if settings.get('music') in {'on', 'off'}: cfg.setdefault('music', {})['enabled'] = settings['music'] == 'on'
-    intensity = {'subtle':0.55, 'normal':1.0, 'strong':1.45}.get(settings.get('motion_intensity','normal'),1.0)
+    motion_explicit = bool(settings.get('_motion_explicit', False))
+    intensity = {'subtle':0.55, 'normal':1.0, 'strong':1.45}.get(settings.get('motion_intensity','normal'),1.0) if motion_explicit else 1.0
     cfg.setdefault('video', {})['zoom'] = 1.0 + (float(cfg.get('video',{}).get('zoom',1.15))-1.0)*intensity
     cfg['video']['max_pan_fraction'] = float(cfg.get('video',{}).get('max_pan_fraction',0.03))*intensity
     require_binary("ffmpeg")
@@ -145,7 +146,7 @@ def render_project(project, config_path=None, overrides=None):
             if len(images) == 1:
                 render_still(images[0], clip, visual_duration, width, height, fps, zoom,
                              "in" if scene_index % 2 == 0 else "out",
-                             bool(grain_cfg.get("enabled", True)), grain_strength, max_pan, float(video_cfg.get("zoom_start", 1.0)), f"{project.name}:{scene_index}")
+                             bool(grain_cfg.get("enabled", True)), grain_strength, max_pan, float(video_cfg.get("zoom_start", 1.0)), (f"{project.name}:{scene_index}" if motion_explicit else None))
             else:
                 per_image = visual_duration / len(images)
                 parts = []
@@ -154,7 +155,7 @@ def render_project(project, config_path=None, overrides=None):
                     part_duration = per_image + (transition if image_index < len(images) - 1 else 0.0)
                     render_still(image, part, part_duration, width, height, fps, zoom,
                                  "in" if (scene_index + image_index) % 2 == 0 else "out",
-                                 bool(grain_cfg.get("enabled", True)), grain_strength, max_pan, motion_seed=f"{project.name}:{scene_index}:{image_index}")
+                                 bool(grain_cfg.get("enabled", True)), grain_strength, max_pan, motion_seed=(f"{project.name}:{scene_index}:{image_index}" if motion_explicit else None))
                     parts.append(part)
                 cmd = ["ffmpeg", "-y"]
                 for part in parts:
