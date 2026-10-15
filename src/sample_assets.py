@@ -5,16 +5,15 @@ import subprocess
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-SAMPLE_SCRIPT = """On a silent night, a lone warrior hears something move behind the wall.
+SAMPLE_SCRIPT = """Every day, a small choice seems unimportant. But one curious question can change what you notice, what you try, and what happens next. The first step is simply to pay attention to what is already in front of you.
 
-The shadow stretches across the floor, but nobody is standing there.
+At first, the answer looks obvious. Then one detail does not fit, and the whole situation becomes more interesting than it appeared. Instead of ignoring that detail, take a moment to ask why it is different.
 
-He raises his blade slowly, trying not to make a sound.
+Instead of rushing ahead, pause and look again. A different angle reveals a clue that was easy to miss the first time. Small observations often matter more than a confident guess made too early.
 
-Then the door opens by itself, revealing a hallway with no end.
+That clue leads to another test. Some ideas fail, but each result narrows the possibilities and brings the real explanation closer. Change one thing at a time, notice what happens, and keep the evidence clear.
 
-One tiny footprint appears in the dust. It is facing him.
-"""
+The lesson is simple: stay curious, check what you think you know, and keep going. The smallest observation can open an entirely new path. What first looked ordinary may become the detail that changes your whole understanding."""
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 VOICE_EXTENSIONS = (".mp3", ".wav", ".m4a", ".ogg")
 
