@@ -140,7 +140,7 @@ def run_for_project(token: str, project: str, started: float):
     return max(candidates, key=lambda r: r.get("created_at", "")) if candidates else None
 def download_artifact(token: str, run_id: int):
     arts = api(token, "GET", f"/repos/{REPO}/actions/runs/{run_id}/artifacts").get("artifacts", [])
-    artifact = next((a for a in arts if a.get("name", "").startswith("manga-video-") and not a.get("expired")), None)
+    artifact = next((a for a in arts if a.get("name", "").startswith("master-video-") and not a.get("expired")), None)
     if not artifact:
         return None
     response = requests.get(artifact["archive_download_url"], headers=api_headers(token), timeout=180)
