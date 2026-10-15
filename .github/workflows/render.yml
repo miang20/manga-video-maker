@@ -471,6 +471,9 @@ jobs:
           Path('output').mkdir(exist_ok=True)
           sheet.save('output/frames-preview.png')
           print('FRAME_PREVIEW=output/frames-preview.png')
+          edge_report = 'FRAME_EDGE_CHECK=FAIL; ' + '; '.join(edge_failures) if edge_failures else 'FRAME_EDGE_CHECK=PASS; sampled 6 frames; source-aware edge comparison'
+          Path('/tmp/frame-edge-check.txt').write_text(edge_report + '\\n', encoding='utf-8')
+          print(edge_report)
           if edge_failures:
               raise SystemExit('FRAME_EDGE_CHECK=FAIL; ' + '; '.join(edge_failures))
           print('FRAME_EDGE_CHECK=PASS; sampled 6 frames; no black edge bars detected')
@@ -636,6 +639,13 @@ jobs:
           log = Path("/tmp/render-main.log")
           ducking_ran = log.is_file() and "MUSIC_DUCKING=PASS" in log.read_text(encoding="utf-8", errors="replace")
           check("Music ducking ran", ducking_ran, "sidechaincompress marker in landscape render log" if ducking_ran else "music ducking marker missing")
+          edge_report_path = Path("/tmp/frame-edge-check.txt")
+          edge_report = edge_report_path.read_text(encoding="utf-8", errors="replace").strip() if edge_report_path.is_file() else ""
+          check("Source-aware frame edge check", "FRAME_EDGE_CHECK=PASS" in edge_report, edge_report or "frame edge report missing")
+          render_log_text = log.read_text(encoding="utf-8", errors="replace") if log.is_file() else ""
+          expected_voice = "VOICE_SOURCE_USED=kokoro" if voice_source == "kokoro" else "VOICE_SOURCE_USED=upload"
+          voice_marker_ok = expected_voice in render_log_text and source_voice is not None and source_voice.is_file()
+          check("Voice source confirmed", voice_marker_ok, expected_voice + " marker and source file" if voice_marker_ok else "expected voice source marker/file missing")
 
           srt = output / f"{name}.srt"
           captions_ok = srt.is_file() and srt.stat().st_size > 0 and any(
