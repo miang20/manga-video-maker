@@ -562,7 +562,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: manga-video-${{ github.event.inputs.project || 'video-001' }}
+          name: master-video-${{ github.event.inputs.project || 'video-001' }}
           path: output/*
           if-no-files-found: warn
           retention-days: 14
