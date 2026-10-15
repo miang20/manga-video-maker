@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 ENGLISH_VOICES = ('af_heart','af_alloy','af_aoede','af_bella','af_jessica','af_kore','af_nicole','af_nova','af_river','af_sarah','af_sky','am_adam','am_echo','am_eric','am_fenrir','am_liam','am_michael','am_onyx','am_puck','am_santa','bf_alice','bf_emma','bf_isabella','bf_lily','bm_daniel','bm_fable','bm_george','bm_lewis')
 def synthesize_project_voice(project: Path, scenes, voice='af_heart', speed=1.0):
@@ -43,4 +44,21 @@ def synthesize_project_voice(project: Path, scenes, voice='af_heart', speed=1.0)
     sf.write(str(target), audio, rate, subtype='PCM_16')
     if not target.is_file() or target.stat().st_size < 1000:
         raise RuntimeError('Kokoro voice WAV was not written correctly.')
+    # Remove only edge silence before Whisper alignment/mixing. Internal sentence
+    # and paragraph pauses are preserved; thresholds are deliberately conservative.
+    trimmed = target.with_name('voice.edge-trim.wav')
+    try:
+        result = subprocess.run([
+            'ffmpeg', '-hide_banner', '-loglevel', 'error', '-y', '-i', str(target),
+            '-af', 'silenceremove=start_periods=1:start_duration=0.30:start_threshold=-48dB,areverse,silenceremove=start_periods=1:start_duration=0.50:start_threshold=-48dB,areverse',
+            '-ar', str(rate), '-ac', '1', '-c:a', 'pcm_s16le', str(trimmed)
+        ], capture_output=True, text=True)
+        if result.returncode:
+            raise RuntimeError('Kokoro edge-silence trim failed: ' + (result.stderr or result.stdout)[-1200:])
+        if trimmed.stat().st_size < 1000:
+            raise RuntimeError('Kokoro edge-silence trim produced an empty voice file.')
+        trimmed.replace(target)
+    finally:
+        trimmed.unlink(missing_ok=True)
+    print('KOKORO_EDGE_TRIM=PASS; leading threshold=0.30s; trailing threshold=0.50s; internal pauses preserved')
     return target
