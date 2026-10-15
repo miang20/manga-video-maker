@@ -236,6 +236,33 @@ jobs:
           SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
         run: |
           python scripts/render_step_06.py
+      - name: Verify MP4 streams and duration
+        if: ${{ !inputs.preview_only }}
+        id: verify_outputs
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          videos = sorted(Path("output").glob("*.mp4"))
+          if not videos:
+              raise SystemExit("No MP4 output found.")
+          for video in videos:
+              probe = json.loads(subprocess.check_output([
+                  "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(video)
+              ], text=True))
+              streams = probe.get("streams", [])
+              if not any(stream.get("codec_type") == "video" for stream in streams):
+                  raise SystemExit(f"{video} has no video stream")
+              audio = [stream for stream in streams if stream.get("codec_type") == "audio"]
+              if not audio:
+                  raise SystemExit(f"{video} has no audio stream")
+              print(
+                  f"VERIFIED {video}: {probe['format'].get('duration')} sec, "
+                  f"audio={audio[0].get('codec_name')}, sample_rate={audio[0].get('sample_rate')}"
+              )
+          PY
       - name: Check voice trimming, duration and preview frames
         if: ${{ !inputs.preview_only }}
         id: media_quality_checks
