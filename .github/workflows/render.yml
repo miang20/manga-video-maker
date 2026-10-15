@@ -513,6 +513,7 @@ jobs:
         env:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
           SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
+          VOICE_SOURCE_INPUT: ${{ github.event.inputs.voice_source || 'project' }}
         run: |
           python - <<'PY'
           import json
@@ -550,30 +551,31 @@ jobs:
                   "ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)
               ], text=True))
 
-          source_voice = next((project / f"voice{ext}" for ext in (".mp3", ".wav", ".m4a", ".ogg")
-                               if (project / f"voice{ext}").is_file()), None)
+          voice_source = os.environ.get("VOICE_SOURCE_INPUT", "project")
+          source_voice = (project / "voice.wav") if voice_source == "kokoro" else next(
+              (project / f"voice{ext}" for ext in (".mp3", ".wav", ".m4a", ".ogg")
+               if (project / f"voice{ext}").is_file()), None)
           prepared_voice = project / "audio" / "voiceover.wav"
           trim_ok = False
-          trim_detail = "source or prepared voice is missing"
-          if source_voice and prepared_voice.is_file():
+          trim_detail = "correct source or prepared voice file is missing"
+          if source_voice and source_voice.is_file() and prepared_voice.is_file():
               def duration(path):
                   return float(probe(path)["format"].get("duration", 0))
-              original_duration = duration(source_voice)
+              source_duration = duration(source_voice)
               prepared_duration = duration(prepared_voice)
-              silence = subprocess.run(
-                  ["ffmpeg", "-hide_banner", "-i", str(source_voice),
+              edge = subprocess.run(
+                  ["ffmpeg", "-hide_banner", "-i", str(prepared_voice),
                    "-af", "silencedetect=noise=-48dB:d=0.15", "-f", "null", "-"],
                   capture_output=True, text=True,
               )
-              leading = re.search(r"silence_end:\s*([0-9.]+)", silence.stderr)
-              leading_seconds = float(leading.group(1)) if leading and "silence_start: 0" in silence.stderr else 0.0
-              removed = original_duration - prepared_duration
-              if leading_seconds >= 0.5:
-                  trim_ok = removed >= min(0.75, leading_seconds * 0.5)
-                  trim_detail = f"leading silence {leading_seconds:.2f}s; removed {removed:.2f}s"
-              else:
-                  trim_ok = prepared_duration > 0 and prepared_duration <= original_duration + 0.15
-                  trim_detail = f"no significant leading silence; source {original_duration:.2f}s, prepared {prepared_duration:.2f}s"
+              starts = [float(x) for x in re.findall(r"silence_start:\\s*([0-9.]+)", edge.stderr)]
+              ends = [float(x) for x in re.findall(r"silence_end:\\s*([0-9.]+)", edge.stderr)]
+              leading = ends[0] if starts and starts[0] <= 0.05 and ends else (prepared_duration if starts and starts[0] <= 0.05 else 0.0)
+              trailing = prepared_duration - starts[-1] if starts and starts[-1] >= (ends[-1] if ends else 0.0) and starts[-1] < prepared_duration else 0.0
+              shortened = max(0.0, source_duration - prepared_duration)
+              trim_ok = source_duration > 0 and prepared_duration > 0 and leading <= 0.30 and trailing <= 0.50
+              trim_detail = (f"source={source_duration:.2f}s; prepared={prepared_duration:.2f}s; "
+                             f"shortened={shortened:.2f}s; prepared edge silence leading={leading:.2f}s/trailing={trailing:.2f}s")
           check("Voice silence trimmed", trim_ok, trim_detail)
 
           main = output / f"{name}.mp4"
