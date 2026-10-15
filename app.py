@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import calendar
 import io
+import json
 import re
 import time
 import zipfile
@@ -260,6 +261,7 @@ def start_job(preview: bool):
             uploads.append(("voice" + PurePosixPath(voice.name).suffix.lower(), voice.getvalue()))
         if music and music_on:
             uploads.append(("music" + PurePosixPath(music.name).suffix.lower(), music.getvalue()))
+        uploads.append(("project.json", json.dumps({"voice_source": voice_source, "voice": kokoro_voice, "voice_speed": voice_speed, "style": style, "motion_intensity": motion_intensity, "music": "on" if music_on else "off"}, indent=2).encode("utf-8")))
         oversized = [(filename, len(data)) for filename, data in uploads if len(data) > MAX_FILE_BYTES]
         if oversized:
             filename, size = oversized[0]
@@ -272,7 +274,8 @@ def start_job(preview: bool):
                 upload_file(token, f"projects/{name}/{filename}", data, f"Upload {name} project input")
                 st.write(f"Uploaded: {filename}")
             settings = {"caption_mode": caption_mode, "caption_size": caption_size, "music_on": music_on,
-                        "shorts_on": shorts_on}
+                        "shorts_on": shorts_on, "voice_source": voice_source, "voice": kokoro_voice,
+                        "voice_speed": voice_speed, "style": style, "motion_intensity": motion_intensity}
             st.session_state["active_run_started"] = time.time()
             dispatch(token, name, preview, settings)
             status.update(label="Workflow dispatch request sent", state="complete")
