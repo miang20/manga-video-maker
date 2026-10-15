@@ -219,6 +219,12 @@ jobs:
           print(f"SAMPLE_IMAGES_COUNT={len(image_files)}")
           print(f"PROJECT_READY={project}")
           PY
+      - name: Cache Kokoro CPU wheels
+        if: ${{ !inputs.preview_only && inputs.voice_source == 'kokoro' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: kokoro-cpu-py311-torch260-transformers449-${{ runner.os }}-v1
       - name: Install Kokoro only when selected
         if: ${{ !inputs.preview_only }}
         env:
@@ -235,10 +241,13 @@ jobs:
           selected = os.environ.get('VOICE_SOURCE_INPUT', 'project')
           if selected != 'project': settings['voice_source'] = selected
           if settings.get('voice_source', 'upload') == 'kokoro':
-              subprocess.run([sys.executable, '-m', 'pip', 'install', 'kokoro', 'soundfile'], check=True)
-              print('KOKORO_DEPENDENCIES=INSTALLED')
+              # Install CPU PyTorch first so Kokoro/Transformers cannot resolve an incompatible build.
+              subprocess.run([sys.executable, '-m', 'pip', 'install', '--index-url', 'https://download.pytorch.org/whl/cpu', 'torch==2.6.0+cpu'], check=True)
+              subprocess.run([sys.executable, '-m', 'pip', 'install', 'transformers==4.49.0', 'kokoro==0.9.4', 'soundfile'], check=True)
+              subprocess.run([sys.executable, '-c', "import torch, transformers, kokoro; print('TORCH_VERSION=' + torch.__version__); print('TRANSFORMERS_VERSION=' + transformers.__version__); print('KOKORO_VERSION=' + getattr(kokoro, '__version__', 'installed')); assert tuple(map(int, torch.__version__.split('+')[0].split('.')[:2])) >= (2, 6), 'PyTorch >=2.6 required'; assert torch.version.cuda is None, 'Expected CPU-only PyTorch'; print('KOKORO_IMPORT_CHECK=PASS')"], check=True)
+              print('KOKORO_DEPENDENCIES=INSTALLED_AND_VERIFIED')
           else:
-              print('KOKORO_DEPENDENCIES=SKIPPED')
+              print('KOKORO_DEPENDENCIES=SKIPPED; upload/project voice does not install torch')
           PY
       - name: Prepare effective render settings
         if: ${{ !inputs.preview_only }}
@@ -288,7 +297,11 @@ jobs:
           PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
         run: |
           set -o pipefail
-          python render.py "projects/${PROJECT_INPUT}" --config /tmp/config-render.yaml --settings-overrides /tmp/settings-overrides.json 2>&1 | tee /tmp/render-main.log
+          if ! python render.py "projects/${PROJECT_INPUT}" --config /tmp/config-render.yaml --settings-overrides /tmp/settings-overrides.json 2>&1 | tee /tmp/render-main.log; then
+            echo "RENDER_LANDSCAPE_FAILED: last 30 lines of /tmp/render-main.log (includes traceback tail):"
+            tail -n 30 /tmp/render-main.log
+            exit 1
+          fi
       - name: Render caption-card MP4
         if: ${{ !inputs.preview_only }}
         id: render_card
@@ -408,7 +421,7 @@ jobs:
               if log_path and Path(log_path).is_file():
                   lines = [line.rstrip() for line in Path(log_path).read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
                   if lines:
-                      detail = "\n".join(lines[-15:])
+                      detail = "\n".join(lines[-30:])
               message = f"Step: {step_name}\nError:\n{detail}\n"
               if not destination.is_file() or not destination.stat().st_size:
                   destination.write_text(message, encoding="utf-8")
