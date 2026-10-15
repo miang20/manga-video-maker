@@ -1,11 +1,12 @@
 import math
 import random
+import hashlib
 from PIL import Image, ImageDraw, ImageFont
 from .utils import run
 
 
 def render_still(image, output, duration, width, height, fps, zoom, direction, grain=True,
-                 grain_opacity=0.06, max_pan_fraction=0.03, zoom_start=1.0):
+                 grain_opacity=0.06, max_pan_fraction=0.03, zoom_start=1.0, motion_seed=None):
     frames = max(1, math.ceil(duration * fps))
     zoom_start = max(1.0, float(zoom_start))
     zoom = max(zoom_start, float(zoom))
@@ -14,7 +15,7 @@ def render_still(image, output, duration, width, height, fps, zoom, direction, g
         z = f"max({zoom:.6f}-{delta:.6f}*on/{frames},{zoom_start:.6f})"
     else:
         z = f"min({zoom_start:.6f}+{delta:.6f}*on/{frames},{zoom:.6f})"
-    rng = random.Random(str(image))
+    rng = random.Random(str(motion_seed if motion_seed is not None else image))
     pan_x = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
     pan_y = rng.uniform(-1.0, 1.0) * max(0.0, min(0.03, float(max_pan_fraction)))
     x = f"max(0,min(iw-iw/zoom,(iw-iw/zoom)/2+({pan_x:.5f})*iw*sin(on/{frames}*PI)))"
