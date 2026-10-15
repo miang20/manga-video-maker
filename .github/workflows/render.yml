@@ -219,6 +219,27 @@ jobs:
           print(f"SAMPLE_IMAGES_COUNT={len(image_files)}")
           print(f"PROJECT_READY={project}")
           PY
+      - name: Install Kokoro only when selected
+        if: ${{ !inputs.preview_only }}
+        env:
+          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+          VOICE_SOURCE_INPUT: ${{ github.event.inputs.voice_source || 'project' }}
+        run: |
+          python - <<'PY'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          project = Path('projects') / os.environ['PROJECT_INPUT']
+          settings = {}
+          config = project / 'project.json'
+          if config.is_file(): settings = json.loads(config.read_text(encoding='utf-8'))
+          selected = os.environ.get('VOICE_SOURCE_INPUT', 'project')
+          if selected != 'project': settings['voice_source'] = selected
+          if settings.get('voice_source', 'upload') == 'kokoro':
+              subprocess.run([sys.executable, '-m', 'pip', 'install', 'kokoro', 'soundfile'], check=True)
+              print('KOKORO_DEPENDENCIES=INSTALLED')
+          else:
+              print('KOKORO_DEPENDENCIES=SKIPPED')
+          PY
       - name: Prepare effective render settings
         if: ${{ !inputs.preview_only }}
         env:
