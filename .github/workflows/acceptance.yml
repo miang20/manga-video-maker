@@ -70,7 +70,7 @@ jobs:
               for path in check_files:
                   label = 'B' if 'master-video-video-001-upload-bw' in str(path) else 'A'
                   lines += ['', f'### {label} checks', path.read_text(encoding='utf-8', errors='replace')]
-                    error_files = [Path(p) for p in glob.glob('acceptance-artifacts/**/first-error.txt', recursive=True)]
+          error_files = [Path(p) for p in glob.glob('acceptance-artifacts/**/first-error.txt', recursive=True)]
           if error_files:
               lines += ['', '## Failing step and last 30 log lines']
               for path in error_files:
