@@ -1,0 +1,1 @@
+{"name":"color","description":"Keep original image colors; no grayscale, threshold, or contrast crushing","grain_enabled":true,"grain_strength":0.015,"convert_mode":"RGB"}
