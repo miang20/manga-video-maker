@@ -472,7 +472,7 @@ jobs:
           sheet.save('output/frames-preview.png')
           print('FRAME_PREVIEW=output/frames-preview.png')
           edge_report = 'FRAME_EDGE_CHECK=FAIL; ' + '; '.join(edge_failures) if edge_failures else 'FRAME_EDGE_CHECK=PASS; sampled 6 frames; source-aware edge comparison'
-          Path('/tmp/frame-edge-check.txt').write_text(edge_report + '\\n', encoding='utf-8')
+          Path('/tmp/frame-edge-check.txt').write_text(edge_report + '\n', encoding='utf-8')
           print(edge_report)
           if edge_failures:
               raise SystemExit('FRAME_EDGE_CHECK=FAIL; ' + '; '.join(edge_failures))
@@ -672,7 +672,7 @@ jobs:
               print(f"| {label} | {status} | {detail.replace('|', '/')} |")
           markdown = ["| Check | Result | Detail |", "|---|---|---|"]
           markdown.extend(f"| {label} | {status} | {str(detail).replace('|', '/')} |" for label, status, detail in results)
-          (output / "quality-checks.md").write_text("\\n".join(markdown) + "\\n", encoding="utf-8")
+          (output / "quality-checks.md").write_text("\n".join(markdown) + "\n", encoding="utf-8")
                     failed = [label for label, status, _ in results if status == "FAIL"]
           if failed and not first_error_text:
               first_label = failed[0]
