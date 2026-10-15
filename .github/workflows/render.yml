@@ -568,8 +568,8 @@ jobs:
                    "-af", "silencedetect=noise=-48dB:d=0.15", "-f", "null", "-"],
                   capture_output=True, text=True,
               )
-              starts = [float(x) for x in re.findall(r"silence_start:\\s*([0-9.]+)", edge.stderr)]
-              ends = [float(x) for x in re.findall(r"silence_end:\\s*([0-9.]+)", edge.stderr)]
+              starts = [float(x) for x in re.findall(r"silence_start:\s*([0-9.]+)", edge.stderr)]
+              ends = [float(x) for x in re.findall(r"silence_end:\s*([0-9.]+)", edge.stderr)]
               leading = ends[0] if starts and starts[0] <= 0.05 and ends else (prepared_duration if starts and starts[0] <= 0.05 else 0.0)
               trailing = prepared_duration - starts[-1] if starts and starts[-1] >= (ends[-1] if ends else 0.0) and starts[-1] < prepared_duration else 0.0
               shortened = max(0.0, source_duration - prepared_duration)
