@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from PIL import Image, ImageStat
+from PIL import Image
 
 YES_NO = re.compile(r"\b(yes|no|absolutely|exactly|never|always|indeed|correct|wrong)\b", re.I)
 DATE_NUMBER = re.compile(r"\b(?:\d{1,4}(?:[,./:-]\d{1,4})*%?|\$\s?\d[\d,.]*|\d+(?:st|nd|rd|th))\b", re.I)
