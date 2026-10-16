@@ -195,7 +195,12 @@ def render_project(project, config_path=None, overrides=None):
     caption_mode = str(caption_cfg.get("caption_mode", "overlay")).lower()
     if caption_mode not in {"overlay", "card"}:
         raise ValueError("captions.caption_mode must be 'overlay' or 'card'.")
-    caption_chunks = group_word_boundaries(\n        bounds,\n        int(caption_cfg.get("words_per_chunk", 3)),\n        int(caption_cfg.get("min_words_per_chunk", 2)),\n        int(caption_cfg.get("max_words_per_chunk", 6)),\n    ) if caption_cfg.get("enabled", True) else []
+    caption_chunks = group_word_boundaries(
+        bounds,
+        int(caption_cfg.get("words_per_chunk", 3)),
+        int(caption_cfg.get("min_words_per_chunk", 2)),
+        int(caption_cfg.get("max_words_per_chunk", 6)),
+    ) if caption_cfg.get("enabled", True) else []
     ass = work / "captions.ass"
     if caption_chunks:
         is_card_mode = caption_mode == "card"
@@ -204,7 +209,8 @@ def render_project(project, config_path=None, overrides=None):
                   int(caption_cfg.get("outline", 5)), height,
                   "center" if is_card_mode else str(caption_cfg.get("caption_position", "lower_third")),
                   True if is_card_mode else bool(caption_cfg.get("box_enabled", True)),
-                  float(caption_cfg.get("pop_seconds", .08)), width=width,\n                  dynamic=bool(caption_cfg.get("dynamic_layout", True)))
+                  float(caption_cfg.get("pop_seconds", .08)), width=width,
+                  dynamic=bool(caption_cfg.get("dynamic_layout", True)))
 
     music = None
     if music_cfg.get("enabled", True):
