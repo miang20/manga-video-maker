@@ -203,7 +203,7 @@ def render_project(project, config_path=None, overrides=None):
                   int(caption_cfg.get("card_size", 88) if is_card_mode else caption_cfg.get("size", 76)),
                   int(caption_cfg.get("outline", 5)), height,
                   "center" if is_card_mode else str(caption_cfg.get("caption_position", "lower_third")),
-                  False if is_card_mode else bool(caption_cfg.get("box_enabled", True)),
+                  True if is_card_mode else bool(caption_cfg.get("box_enabled", True)),
                   float(caption_cfg.get("pop_seconds", .08)), width=width,\n                  dynamic=bool(caption_cfg.get("dynamic_layout", True)))
 
     music = None
