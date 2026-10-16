@@ -119,7 +119,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         output.write(header)
         pop_cs = max(1, int(float(pop_seconds) * 100))
         for index, caption in enumerate(captions):
-            raw = str(caption["text"]).replace("{", r"\\{").replace("}", r"\\}").replace("\\n", " ")
+            raw = str(caption["text"]).replace("{", r"\\{").replace("}", r"\\}").replace("\n", " ")
             start = max(0.0, float(caption["start"]))
             end = max(start + 0.12, float(caption["end"]))
             if dynamic:
@@ -133,4 +133,4 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             else:
                 text = raw
                 motion = f"{{\\fscx90\\fscy90\\t(0,{pop_cs},\\fscx100\\fscy100)}}"
-            output.write(f"Dialogue: 0,{ts(start)},{ts(end)},Default,,0,0,0,,{motion}{text}\\n")
+            output.write(f"Dialogue: 0,{ts(start)},{ts(end)},Default,,0,0,0,,{motion}{text}\n")
