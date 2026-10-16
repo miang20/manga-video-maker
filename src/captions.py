@@ -61,12 +61,12 @@ def _caption_layout(index, width, height):
     layouts = [
         (8, 0.50, 0.16, 0),   # top centre
         (2, 0.50, 0.82, 0),   # bottom centre
-        (6, 0.79, 0.53, 0),   # middle right
-        (4, 0.21, 0.56, 0),   # middle left
-        (7, 0.22, 0.23, 0),   # upper left
-        (9, 0.78, 0.24, 0),   # upper right
-        (3, 0.78, 0.79, 0),   # lower right
-        (1, 0.22, 0.78, 0),   # lower left
+        (6, 0.64, 0.53, 0),   # middle right
+        (4, 0.36, 0.56, 0),   # middle left
+        (7, 0.39, 0.23, 0),   # upper left
+        (9, 0.61, 0.24, 0),   # upper right
+        (3, 0.62, 0.79, 0),   # lower right
+        (1, 0.38, 0.78, 0),   # lower left
         (5, 0.50, 0.51, 0),   # occasional mid-screen
     ]
     alignment, x, y, angle = layouts[index % len(layouts)]
