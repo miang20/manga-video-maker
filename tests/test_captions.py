@@ -34,13 +34,13 @@ class CaptionTests(unittest.TestCase):
             target = Path(directory) / "captions.ass"
             write_ass(captions, target, width=1920, height=1080)
             content = target.read_text(encoding="utf-8")
-        self.assertIn(r"\\an8", content)
-        self.assertIn(r"\\an2", content)
-        self.assertIn(r"\\pos(", content)
-        self.assertIn(r"\\fad(", content)
-        self.assertIn(r"\\1c&H000000FF&", content)
-        self.assertIn(r"\\4c&H00FFFFFF&", content)
-        self.assertIn(r"\\4c&H00000000&", content)
+        self.assertIn(r"\an8", content)
+        self.assertIn(r"\an2", content)
+        self.assertIn(r"\pos(", content)
+        self.assertIn(r"\fad(", content)
+        self.assertIn(r"\1c&H000000FF&", content)
+        self.assertIn(r"\4c&H00FFFFFF&", content)
+        self.assertIn(r"\4c&H00000000&", content)
         self.assertEqual(content.count("Dialogue:"), 3)
 
     def test_empty_word_list_returns_no_captions(self):
