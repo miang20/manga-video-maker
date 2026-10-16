@@ -41,7 +41,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         "top": lambda: (8, 960, max(90, int(height * 0.13))),
         "bottom": lambda: (2, 960, int(height * 0.86)),
         "left": lambda: (4, int(1920 * 0.12), int(height * 0.50)),
-        "right": lambda: (6, int(1920 * 0.88), int(height * 0.50)),
+        "right": lambda: (6, int(1920 * 0.875), int(height * 0.50)),
     }
     colors = {
         "answer_yes": "&H0064DC32",
