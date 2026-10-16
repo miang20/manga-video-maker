@@ -239,7 +239,7 @@ jobs:
           PROJECT_INPUT: ${{ inputs.project || 'video-001' }}
           SHORTS_START: ${{ inputs.shorts_start || '0' }}
           SHORTS_END: ${{ inputs.shorts_end || '10' }}
-          SHORTS_ON_INPUT: ${{ inputs.shorts_on || 'true' }}
+          SHORTS_ON_INPUT: ${{ inputs.shorts_on }}
         run: |
           python scripts/render_step_06.py
       - name: Verify MP4 streams and duration
@@ -302,7 +302,7 @@ jobs:
         if: ${{ always() && !inputs.preview_only }}
         env:
           PROJECT_INPUT: ${{ inputs.project || 'video-001' }}
-          SHORTS_ON_INPUT: ${{ inputs.shorts_on || 'true' }}
+          SHORTS_ON_INPUT: ${{ inputs.shorts_on }}
           VOICE_SOURCE_INPUT: ${{ inputs.voice_source || 'project' }}
         run: |
           python scripts/render_step_09.py
@@ -310,7 +310,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: master-video-${{ inputs.project || 'video-001' }}
+          name: ${{ inputs.artifact_name || format('master-video-{0}', inputs.project || 'video-001') }}
           path: output/*
           if-no-files-found: warn
           retention-days: 14
