@@ -1,4 +1,4 @@
-def group_word_boundaries(boundaries, words_per_chunk=3):
+import re\ndef group_word_boundaries(boundaries, words_per_chunk=3):
     words = [b for b in boundaries if str(b.get("text", "")).strip()]
     n = max(2, min(4, int(words_per_chunk)))
     out = []
@@ -64,7 +64,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 tags.extend([f"\\an{align}", f"\\pos({x},{y})"])
             kind = str(caption.get("director_kind", "neutral")) if smart_director else "neutral"
             if kind == "answer":
-                answer_key = "answer_yes" if __import__("re").search(r"\\b(yes|correct|exactly|indeed|absolutely)\\b", raw_text, __import__("re").I) else "answer_no"
+                answer_key = "answer_yes" if re.search(r"\b(yes|correct|exactly|indeed|absolutely)\b", raw_text, re.I) else "answer_no"
                 tags.extend([f"\\1c{colors[answer_key]}", "\\bord7", "\\fscx65\\fscy65\\frz-3\\t(0,130,\\fscx112\\fscy112\\frz0)"])
             elif kind == "question":
                 tags.extend([f"\\1c{colors[kind]}", "\\fscx78\\fscy78\\frz2\\t(0,130,\\fscx100\\fscy100\\frz0)"])
