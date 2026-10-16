@@ -13,6 +13,10 @@ on:
       shorts_on: {type: boolean, required: false, default: true}
       preview_only: {type: boolean, required: false, default: false}
       artifact_name: {type: string, required: false, default: ''}
+      shorts_start: {type: string, required: false, default: '0'}
+      shorts_end: {type: string, required: false, default: '10'}
+      caption_mode: {type: string, required: false, default: overlay}
+      caption_size: {type: string, required: false, default: '76'}
   workflow_dispatch:
     inputs:
       project:
@@ -135,6 +139,8 @@ jobs:
   render:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
         id: checkout
@@ -185,29 +191,29 @@ jobs:
       - name: Install Kokoro only when selected
         if: ${{ !inputs.preview_only }}
         env:
-          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
-          VOICE_SOURCE_INPUT: ${{ github.event.inputs.voice_source || 'project' }}
+          PROJECT_INPUT: ${{ inputs.project || 'video-001' }}
+          VOICE_SOURCE_INPUT: ${{ inputs.voice_source || 'project' }}
         run: |
           python scripts/render_step_03.py
       - name: Prepare effective render settings
         if: ${{ !inputs.preview_only }}
         env:
-          CAPTION_MODE_INPUT: ${{ github.event.inputs.caption_mode || 'overlay' }}
-          CAPTION_SIZE_INPUT: ${{ github.event.inputs.caption_size || '76' }}
-          MUSIC_ON_INPUT: ${{ github.event.inputs.music_on || 'true' }}
-          VOICE_SOURCE_INPUT: ${{ github.event.inputs.voice_source || 'project' }}
-          VOICE_INPUT: ${{ github.event.inputs.voice || 'af_heart' }}
-          VOICE_SPEED_INPUT: ${{ github.event.inputs.voice_speed || '1.0' }}
-          STYLE_INPUT: ${{ github.event.inputs.style || 'project' }}
-          MOTION_INPUT: ${{ github.event.inputs.motion_intensity || 'project' }}
-          SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
+          CAPTION_MODE_INPUT: ${{ inputs.caption_mode || 'overlay' }}
+          CAPTION_SIZE_INPUT: ${{ inputs.caption_size || '76' }}
+          MUSIC_ON_INPUT: ${{ inputs.music_on }}
+          VOICE_SOURCE_INPUT: ${{ inputs.voice_source || 'project' }}
+          VOICE_INPUT: ${{ inputs.voice || 'af_heart' }}
+          VOICE_SPEED_INPUT: ${{ inputs.voice_speed || '1.0' }}
+          STYLE_INPUT: ${{ inputs.style || 'project' }}
+          MOTION_INPUT: ${{ inputs.motion_intensity || 'project' }}
+          SHORTS_ON_INPUT: ${{ inputs.shorts_on }}
         run: |
           python scripts/render_step_04.py
       - name: Render landscape MP4
         if: ${{ !inputs.preview_only }}
         id: render_landscape
         env:
-          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+          PROJECT_INPUT: ${{ inputs.project || 'video-001' }}
         run: |
           set -o pipefail
           if ! python render.py "projects/${PROJECT_INPUT}" --config /tmp/config-render.yaml --settings-overrides /tmp/settings-overrides.json 2>&1 | tee /tmp/render-main.log; then
@@ -219,7 +225,7 @@ jobs:
         if: ${{ !inputs.preview_only }}
         id: render_card
         env:
-          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
+          PROJECT_INPUT: ${{ inputs.project || 'video-001' }}
         run: |
           python scripts/render_step_05.py
           cp output/notes.txt /tmp/landscape-notes.txt
@@ -230,10 +236,10 @@ jobs:
         if: ${{ !inputs.preview_only && inputs.shorts_on }}
         id: render_shorts
         env:
-          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
-          SHORTS_START: ${{ github.event.inputs.shorts_start || '0' }}
-          SHORTS_END: ${{ github.event.inputs.shorts_end || '10' }}
-          SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
+          PROJECT_INPUT: ${{ inputs.project || 'video-001' }}
+          SHORTS_START: ${{ inputs.shorts_start || '0' }}
+          SHORTS_END: ${{ inputs.shorts_end || '10' }}
+          SHORTS_ON_INPUT: ${{ inputs.shorts_on || 'true' }}
         run: |
           python scripts/render_step_06.py
       - name: Verify MP4 streams and duration
@@ -267,8 +273,8 @@ jobs:
         if: ${{ !inputs.preview_only }}
         id: media_quality_checks
         env:
-          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
-          VOICE_SOURCE_INPUT: ${{ github.event.inputs.voice_source || 'project' }}
+          PROJECT_INPUT: ${{ inputs.project || 'video-001' }}
+          VOICE_SOURCE_INPUT: ${{ inputs.voice_source || 'project' }}
         run: |
           python scripts/render_step_07.py
       - name: Record first workflow error
@@ -295,16 +301,16 @@ jobs:
       - name: Final self-check and summary table
         if: ${{ always() && !inputs.preview_only }}
         env:
-          PROJECT_INPUT: ${{ github.event.inputs.project || 'video-001' }}
-          SHORTS_ON_INPUT: ${{ github.event.inputs.shorts_on || 'true' }}
-          VOICE_SOURCE_INPUT: ${{ github.event.inputs.voice_source || 'project' }}
+          PROJECT_INPUT: ${{ inputs.project || 'video-001' }}
+          SHORTS_ON_INPUT: ${{ inputs.shorts_on || 'true' }}
+          VOICE_SOURCE_INPUT: ${{ inputs.voice_source || 'project' }}
         run: |
           python scripts/render_step_09.py
       - name: Upload all output files
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: master-video-${{ github.event.inputs.project || 'video-001' }}
+          name: master-video-${{ inputs.project || 'video-001' }}
           path: output/*
           if-no-files-found: warn
           retention-days: 14
