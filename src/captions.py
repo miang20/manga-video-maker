@@ -1,4 +1,6 @@
-import re\ndef group_word_boundaries(boundaries, words_per_chunk=3):
+import re
+
+def group_word_boundaries(boundaries, words_per_chunk=3):
     words = [b for b in boundaries if str(b.get("text", "")).strip()]
     n = max(2, min(4, int(words_per_chunk)))
     out = []
