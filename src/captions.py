@@ -48,8 +48,8 @@ def group_word_boundaries(boundaries, words_per_chunk=3, min_words_per_chunk=2, 
         sentence_end = bool(_PUNCTUATION_END.search(token))
         soft_end = bool(_SOFT_END.search(token))
         too_long = count >= maximum or (end - start) >= 2.25
-        cadence_end = count >= preferred and (end - start) >= 0.9
-        if (sentence_end and count >= minimum) or too_long or (soft_end and count >= minimum) or cadence_end:
+        punchy_end = count == 1 and (token.isupper() and len(token.strip("!?.,\\"'’”")) >= 3 or "!" in token)
+        if (sentence_end and (count >= minimum or punchy_end)) or too_long or (soft_end and count >= minimum):
             flush()
     flush()
     return out
