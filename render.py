@@ -14,7 +14,7 @@ from src.voice import find_voice_file, prepare_voice, transcribe_word_timestamps
 from src.images import prepare_images
 from src.captions import group_word_boundaries, write_ass
 from src.effects import render_still, text_card
-from src.pro_editing import choose_transition, editorial_filter_chain
+from src.pro_editing import choose_transition, editorial_filter_chain, transition_sfx_graph
 from src.utils import load_config, ensure_dirs, require_binary, run, ffprobe
 from src.shorts import make_shorts
 from src.project_settings import resolve_project_settings
@@ -249,15 +249,41 @@ def render_project(project, config_path=None, overrides=None):
     cmd = ["ffmpeg", "-y", "-i", joined, "-i", voice_path]
     if music:
         cmd += ["-stream_loop", "-1", "-i", music]
-    cmd += ["-filter_complex"]
+    sfx_graph = transition_sfx_graph(scene_intervals, voice_duration, sample_rate)
     if music:
         music_linear = math.pow(10.0, float(music_cfg.get("volume_db", -26)) / 20.0)
         threshold = float(music_cfg.get("ducking_threshold", .03))
         ratio = float(music_cfg.get("ducking_ratio", 8))
         fade = float(music_cfg.get("fade_seconds", 1.0))
-        cmd += [f"[1:a]aresample={sample_rate},volume=1,asplit=2[voice_main][voice_sc];[2:a]aresample={sample_rate},volume={music_linear:.6f},afade=t=in:st=0:d={fade},asetpts=PTS-STARTPTS[music];[music][voice_sc]sidechaincompress=threshold={threshold}:ratio={ratio}:attack=20:release=350[ducked];[voice_main][ducked]amix=inputs=2:duration=first:dropout_transition=2,loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"]
+        audio_graph = (
+            f"[1:a]aresample={sample_rate},volume=1,asplit=2[voice_main][voice_sc];"
+            f"[2:a]aresample={sample_rate},volume={music_linear:.6f},afade=t=in:st=0:d={fade},"
+            "asetpts=PTS-STARTPTS[music];"
+            f"[music][voice_sc]sidechaincompress=threshold={threshold}:ratio={ratio}:attack=20:release=350[ducked]"
+        )
+        if sfx_graph:
+            audio_graph += ";" + sfx_graph + (
+                ";[voice_main][ducked][sfx_mix]amix=inputs=3:duration=first:dropout_transition=2,"
+                f"loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"
+            )
+        else:
+            audio_graph += (
+                ";[voice_main][ducked]amix=inputs=2:duration=first:dropout_transition=2,"
+                f"loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"
+            )
     else:
-        cmd += [f"[1:a]aresample={sample_rate},loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"]
+        audio_graph = f"[1:a]aresample={sample_rate},volume=1[voice_main]"
+        if sfx_graph:
+            audio_graph += ";" + sfx_graph + (
+                ";[voice_main][sfx_mix]amix=inputs=2:duration=first:dropout_transition=2,"
+                f"loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},aresample={sample_rate}[aout]"
+            )
+        else:
+            audio_graph += (
+                f";[voice_main]loudnorm=I={target_lufs}:TP={true_peak_db}:LRA={loudness_range},"
+                f"aresample={sample_rate}[aout]"
+            )
+    cmd += ["-filter_complex", audio_graph]
     cmd += ["-map", "0:v:0", "-map", "[aout]", "-vf", vf, "-r", str(fps),
             "-c:v", "libx264", "-preset", str(video_cfg.get("preset", "medium")),
             "-crf", str(video_cfg.get("crf", 20)), "-c:a", "aac", "-b:a", "192k",
