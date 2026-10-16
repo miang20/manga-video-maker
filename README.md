@@ -8,6 +8,10 @@ General-purpose renderer for any niche and any uploaded scene-image style. The n
 2. Upload your exact script and numbered scene images (`01.png`, `02.jpg`, `03.webp`, etc.). Add `voice.wav` (or another supported `voice.*`) for upload voice. Voice upload is optional in Kokoro mode.
 3. Open GitHub → Actions → Render Video → Run workflow, enter the project folder name and settings, then download the MP4 and companion files from the workflow artifact.
 
+## Acceptance check
+
+Acceptance check: Actions -> Acceptance -> Run workflow -> read the Summary at the top.
+
 ## Project files
 
 - `script.txt`: spoken paragraphs separated by a blank line; script text is preserved.

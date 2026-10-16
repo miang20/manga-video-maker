@@ -69,7 +69,7 @@ class MasterMakerTests(unittest.TestCase):
         class Pipeline:
             def __init__(self,lang_code): self.lang_code=lang_code
             def __call__(self,text,voice,speed):
-                yield (None,None,np.ones(240,dtype=np.float32)*0.1)
+                yield (None,None,np.ones(24000,dtype=np.float32)*0.1)
         fake_kokoro.KPipeline=Pipeline
         fake_soundfile=types.ModuleType('soundfile')
         def fake_write(path,audio,rate,subtype=None):

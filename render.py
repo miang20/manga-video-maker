@@ -113,6 +113,10 @@ def render_project(project, config_path=None, overrides=None):
     scene_intervals = []
     voice_path = audio_dir / "voiceover.wav"
     if supplied_voice:
+        if settings.get('voice_source','upload') == 'kokoro':
+            print(f"VOICE_SOURCE_USED=kokoro voice={settings.get('voice','af_heart')} speed={float(settings.get('voice_speed',1.0)):.2f} generated_file={supplied_voice}")
+        else:
+            print(f"VOICE_SOURCE_USED=upload file={supplied_voice}")
         print(f"[VOICE] Using narration file: {supplied_voice.name}; network TTS is disabled for this render.")
         prepare_voice(supplied_voice, voice_path, cfg)
         words, transcribed_duration = transcribe_word_timestamps(voice_path, transcription_cfg)
