@@ -33,3 +33,38 @@ def editorial_filter_chain(fps):
         "unsharp=5:5:0.25:5:5:0.0,"
         "vignette=PI/5,format=yuv420p"
     )
+
+
+def transition_sfx_graph(scene_intervals, duration, sample_rate=44100):
+    """Build quiet, synthetic transition whooshes without external assets or APIs.
+
+    The effect track is mixed under narration and music. Very short videos or
+    single-scene projects simply return an empty graph.
+    """
+    duration = max(0.0, float(duration))
+    events = []
+    for start, _end in list(scene_intervals)[1:]:
+        at = max(0.0, float(start))
+        if 0.12 < at < duration - 0.28:
+            events.append(at)
+    if not events:
+        return ""
+
+    filters = []
+    labels = []
+    for index, at in enumerate(events):
+        label = f"whoosh{index}"
+        delay_ms = int(round(at * 1000))
+        filters.append(
+            f"anoisesrc=color=white:sample_rate={int(sample_rate)}:channels=2:"
+            f"duration=0.32:amplitude=0.12,"
+            "highpass=f=700,lowpass=f=6000,"
+            "afade=t=in:st=0:d=0.035,afade=t=out:st=0.07:d=0.25,"
+            f"volume=0.14,adelay={delay_ms}|{delay_ms}[{label}]"
+        )
+        labels.append(f"[{label}]")
+    filters.append(
+        "".join(labels)
+        + f"amix=inputs={len(labels)}:duration=longest:normalize=0,volume=0.7[sfx_mix]"
+    )
+    return ";".join(filters)
