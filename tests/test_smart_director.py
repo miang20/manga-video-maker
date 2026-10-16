@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 from src.smart_director import classify_caption, choose_caption_position, direct_captions
+from src.captions import write_ass
 
 
 class SmartDirectorTests(unittest.TestCase):
@@ -24,6 +25,22 @@ class SmartDirectorTests(unittest.TestCase):
             path = Path(tmp) / "scene.png"
             image.save(path)
             self.assertIn(choose_caption_position("YES!", path), {"top", "bottom", "left", "right"})
+
+    def test_smart_caption_ass_includes_position_and_context_animation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "captions.ass"
+            captions = [
+                {"start": 0.0, "end": 0.7, "text": "Why now?", "director_kind": "question", "director_position": "top"},
+                {"start": 0.7, "end": 1.2, "text": "YES!", "director_kind": "answer", "director_position": "right"},
+                {"start": 1.2, "end": 2.0, "text": "In 1945", "director_kind": "fact", "director_position": "bottom"},
+            ]
+            write_ass(captions, target, smart_director=True)
+            result = target.read_text(encoding="utf-8")
+            self.assertIn(r"\an8\pos(960,", result)
+            self.assertIn(r"\an6\pos(1680,", result)
+            self.assertIn(r"\1c&H0000D7FF", result)
+            self.assertIn(r"\1c&H0064DC32", result)
+            self.assertIn(r"\fscx65\fscy65", result)
 
     def test_director_preserves_timing_and_adds_scene_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
