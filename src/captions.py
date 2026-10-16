@@ -129,7 +129,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 base_colour = "&H00000000&" if white_plate else "&H00FFFFFF&"
                 plate_colour = "&H00FFFFFF&" if white_plate else "&H00000000&"
                 text = _highlight_text(raw, base_colour)
-                motion = f"{{\\an{alignment}\\pos({x},{y})\\fad(65,90)\\fscx88\\fscy88\\t(0,{pop_cs},\\fscx100\\fscy100)\\4c{plate_colour}}}"
+                if index % 4 == 0:
+                    effect = f"\\fad(65,90)\\fscx82\\fscy82\\t(0,{pop_cs},\\fscx100\\fscy100)"
+                elif index % 4 == 1:
+                    origin_x = max(80, x - int(width * 0.10))
+                    effect = f"\\move({origin_x},{y},{x},{y},0,180)\\fad(55,90)"
+                elif index % 4 == 2:
+                    effect = f"\\fscx112\\fscy112\\frz-2\\t(0,{pop_cs},\\fscx100\\fscy100\\frz0)\\fad(45,80)"
+                else:
+                    effect = f"\\fad(120,100)\\fscx96\\fscy96\\t(0,{pop_cs},\\fscx100\\fscy100)"
+                motion = f"{{\\an{alignment}\\pos({x},{y}){effect}\\4c{plate_colour}}}"
             else:
                 text = raw
                 motion = f"{{\\fscx90\\fscy90\\t(0,{pop_cs},\\fscx100\\fscy100)}}"
