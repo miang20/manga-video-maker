@@ -18,6 +18,7 @@ from src.utils import load_config, ensure_dirs, require_binary, run, ffprobe
 from src.shorts import make_shorts
 from src.project_settings import resolve_project_settings
 from src.kokoro_voice import synthesize_project_voice
+from src.smart_director import direct_captions
 
 
 def duration(path):
@@ -196,6 +197,10 @@ def render_project(project, config_path=None, overrides=None):
     if caption_mode not in {"overlay", "card"}:
         raise ValueError("captions.caption_mode must be 'overlay' or 'card'.")
     caption_chunks = group_word_boundaries(bounds, int(caption_cfg.get("words_per_chunk", 3))) if caption_cfg.get("enabled", True) else []
+    smart_director_enabled = bool(caption_chunks) and caption_mode == "overlay"
+    if smart_director_enabled:
+        caption_chunks = direct_captions(caption_chunks, scenes, scene_intervals)
+        print(f"SMART_DIRECTOR=PASS; captions={len(caption_chunks)}; semantic animations and scene-aware placement enabled")
     ass = work / "captions.ass"
     if caption_chunks:
         is_card_mode = caption_mode == "card"
@@ -204,7 +209,8 @@ def render_project(project, config_path=None, overrides=None):
                   int(caption_cfg.get("outline", 5)), height,
                   "center" if is_card_mode else str(caption_cfg.get("caption_position", "lower_third")),
                   False if is_card_mode else bool(caption_cfg.get("box_enabled", True)),
-                  float(caption_cfg.get("pop_seconds", .08)))
+                  float(caption_cfg.get("pop_seconds", .08)),
+                  smart_director=smart_director_enabled)
 
     music = None
     if music_cfg.get("enabled", True):
